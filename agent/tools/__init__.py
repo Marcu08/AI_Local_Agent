@@ -2,6 +2,7 @@
 
 from agent.tools.base import Tool, ToolContext, ToolRegistry, ToolResult, clip
 from agent.tools.fs_read import list_dir, read_file
+from agent.tools.fs_search import search_files
 from agent.tools.fs_write import edit_file, write_file
 from agent.tools.memory_tool import search_memory
 from agent.tools.shell import run_command
@@ -126,6 +127,36 @@ def create_default_registry() -> ToolRegistry:
                 "required": ["path", "old_str", "new_str"],
             },
             handler=edit_file,
+        )
+    )
+    registry.register(
+        Tool(
+            name="search_files",
+            description=(
+                "Cerca una stringa (senza distinzione tra maiuscole e minuscole) "
+                "nei file di testo dentro le workspace_root: output nel formato "
+                "file:riga:contenuto. Ignora .git, .venv, __pycache__, node_modules "
+                "e i file binari o troppo grandi; massimo 50 occorrenze. "
+                "Sola lettura: non modifica nulla e non chiede conferme."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Stringa da cercare (fornita dall'utente)",
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": (
+                            "Cartella o file da partire (relativo alla prima root; "
+                            "default: l'intera prima root)"
+                        ),
+                    },
+                },
+                "required": ["query"],
+            },
+            handler=search_files,
         )
     )
     registry.register(

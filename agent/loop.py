@@ -36,7 +36,9 @@ Regole fondamentali:
 
 # Tool le cui osservazioni espongono contenuto esterno: dopo il loro uso, le
 # conferme successive del turno mostrano l'avviso "contenuto esterno".
-UNTRUSTED_TOOLS = frozenset({"list_dir", "read_file", "run_command", "search_memory"})
+UNTRUSTED_TOOLS = frozenset(
+    {"list_dir", "read_file", "run_command", "search_memory", "search_files"}
+)
 UNTRUSTED_OPEN = '<tool_output untrusted="true">'
 UNTRUSTED_CLOSE = "</tool_output>"
 
