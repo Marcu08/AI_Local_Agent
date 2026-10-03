@@ -10,3 +10,5 @@ dist/
 *.db
 *.sqlite3
 data/
+logs/
+vector_index/

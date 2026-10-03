@@ -122,14 +122,14 @@ def test_search_memory_registrato() -> None:
 
 def test_ingest_dry_run(tmp_path: Path) -> None:
     (tmp_path / "nota.md").write_text("# nota", encoding="utf-8")
-    script = _PROJECT_ROOT / "scripts" / "ingest.py"
     proc = subprocess.run(
-        [sys.executable, str(script), "--path", str(tmp_path), "--dry-run"],
+        [sys.executable, "-m", "scripts.ingest", "--path", str(tmp_path), "--dry-run"],
         capture_output=True,
         text=True,
         encoding="utf-8",
         errors="replace",
         timeout=60,
+        cwd=str(_PROJECT_ROOT),
     )
     assert proc.returncode == 0, proc.stderr
     assert "Piano di ingestion" in proc.stdout
@@ -139,27 +139,27 @@ def test_ingest_dry_run(tmp_path: Path) -> None:
 
 def test_ingest_senza_dry_run_non_implementato(tmp_path: Path) -> None:
     (tmp_path / "nota.md").write_text("# nota", encoding="utf-8")
-    script = _PROJECT_ROOT / "scripts" / "ingest.py"
     proc = subprocess.run(
-        [sys.executable, str(script), "--path", str(tmp_path)],
+        [sys.executable, "-m", "scripts.ingest", "--path", str(tmp_path)],
         capture_output=True,
         text=True,
         encoding="utf-8",
         errors="replace",
         timeout=60,
+        cwd=str(_PROJECT_ROOT),
     )
     assert proc.returncode == 1
     assert "non ancora implementata" in proc.stdout
 
 
 def test_ingest_path_assente(tmp_path: Path) -> None:
-    script = _PROJECT_ROOT / "scripts" / "ingest.py"
     proc = subprocess.run(
-        [sys.executable, str(script), "--path", str(tmp_path / "nope"), "--dry-run"],
+        [sys.executable, "-m", "scripts.ingest", "--path", str(tmp_path / "nope"), "--dry-run"],
         capture_output=True,
         text=True,
         encoding="utf-8",
         errors="replace",
         timeout=60,
+        cwd=str(_PROJECT_ROOT),
     )
     assert proc.returncode == 2

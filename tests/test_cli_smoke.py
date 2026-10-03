@@ -1,7 +1,12 @@
-"""Smoke test della CLI: python -m agent --provider mock senza rete né TTY."""
+"""Smoke test della CLI: python -m agent --provider mock senza rete né TTY.
+
+Config di test con root temporanee: nessuna dipendenza dal config.json reale
+né da path della macchina dell'autore (test portabile).
+"""
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -9,10 +14,29 @@ from pathlib import Path
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
-def test_smoke_cli_mock_un_turno_completo() -> None:
+def _write_tmp_config(tmp_path: Path) -> Path:
+    """Config di test: root temporanea pre-caricata + provider mock."""
+    root = tmp_path / "workspace"
+    root.mkdir()
+    (root / "file_di_test.txt").write_text("contenuto", encoding="utf-8")
+    cfg = tmp_path / "config.json"
+    cfg.write_text(
+        json.dumps(
+            {
+                "workspace_roots": [str(root)],
+                "llm": {"provider": "mock"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    return cfg
+
+
+def test_smoke_cli_mock_un_turno_completo(tmp_path: Path) -> None:
     """Un turno ReAct offline: list_dir (tool call) -> osservazione -> risposta finale."""
+    cfg = _write_tmp_config(tmp_path)
     proc = subprocess.run(
-        [sys.executable, "-m", "agent", "--provider", "mock"],
+        [sys.executable, "-m", "agent", "--config", str(cfg)],
         input="",
         capture_output=True,
         text=True,
@@ -25,11 +49,13 @@ def test_smoke_cli_mock_un_turno_completo() -> None:
     assert "Act:" in proc.stdout, "la tool call list_dir deve essere renderizzata"
     assert "Observation:" in proc.stdout, "l'osservazione del tool deve essere renderizzata"
     assert "Demo mock completata" in proc.stdout, "risposta finale attesa"
+    # Prova di portabilità: la list_dir ha letto la ROOT TEMPORANEA del test.
+    assert "file_di_test.txt" in proc.stdout
 
 
-def test_smoke_cli_config_non_valido() -> None:
+def test_smoke_cli_config_non_valido(tmp_path: Path) -> None:
     proc = subprocess.run(
-        [sys.executable, "-m", "agent", "--config", "config_assente.json"],
+        [sys.executable, "-m", "agent", "--config", str(tmp_path / "config_assente.json")],
         input="",
         capture_output=True,
         text=True,

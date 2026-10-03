@@ -49,11 +49,20 @@ def test_num_predict_configurabile(tmp_path: Path) -> None:
 
 
 def test_load_config_eseguibile_del_progetto() -> None:
-    """Il config.json consegnato con il progetto deve essere valido."""
-    assert default_config_path().is_file()
-    loaded = load_config()
-    assert loaded.workspace_roots
-    assert all(root.is_dir() for root in loaded.workspace_roots)
+    """Struttura del config.json consegnato con il progetto.
+
+    Solo ispezione del JSON: le workspace_root possono non esistere su un'altra
+    macchina, quindi non si chiama load_config() (test portabile).
+    """
+    path = default_config_path()
+    assert path.is_file()
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    roots = raw.get("workspace_roots")
+    assert isinstance(roots, list) and roots
+    assert all(isinstance(r, str) and r.strip() for r in roots)
+    assert raw.get("llm", {}).get("provider") in {"ollama", "mock"}
+    assert raw.get("security", {}).get("require_write_confirmation") is True
+    assert raw.get("security", {}).get("require_command_confirmation") is True
 
 
 def test_config_mancante(tmp_path: Path) -> None:
