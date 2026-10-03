@@ -42,10 +42,15 @@ def clip(text: str, max_chars: int) -> str:
 
 @dataclass
 class ToolContext:
-    """Contesto passato a ogni handler: config + conferma Human-in-the-Loop."""
+    """Contesto passato a ogni handler: config, conferme HIL e stato del turno.
+
+    `seen_untrusted` diventa True dopo la prima osservazione che espone contenuto
+    esterno (file/comandi): le conferme successive lo mostrano all'utente.
+    """
 
     config: AgentConfig
     confirm: ConfirmationHandler
+    seen_untrusted: bool = False
 
 
 Handler = Callable[[dict[str, Any], ToolContext], ToolResult]

@@ -39,6 +39,11 @@ def run_command(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         )
         if reason is not None:
             detail = f"comando: {command}\ncwd: {cwd}\nnon auto-approvato: {reason}"
+            if ctx.seen_untrusted:
+                detail += (
+                    "\navviso: azione proposta dopo la lettura di contenuto "
+                    "esterno (tool_output non fidato)"
+                )
             approved = ctx.confirm.confirm("Esecuzione comando", detail)
             if not approved:
                 return ToolResult.failure(

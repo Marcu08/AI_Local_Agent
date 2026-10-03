@@ -49,7 +49,13 @@ def write_file(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
 
     diff = clip(_build_diff(existing, content, path), ctx.config.security.max_output_chars)
     if ctx.config.security.require_write_confirmation:
-        approved = ctx.confirm.confirm(f"Scrittura file: {path}", diff)
+        detail = diff
+        if ctx.seen_untrusted:
+            detail += (
+                "\n\n[avviso] azione proposta dopo la lettura di contenuto "
+                "esterno (tool_output non fidato)"
+            )
+        approved = ctx.confirm.confirm(f"Scrittura file: {path}", detail)
         if not approved:
             return ToolResult.failure(
                 f"Scrittura rifiutata dall'utente: il file {path} non è stato modificato."
