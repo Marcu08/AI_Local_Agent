@@ -7,7 +7,12 @@ from pathlib import Path
 
 import pytest
 
-from agent.config import ConfigError, default_config_path, load_config
+from agent.config import (
+    DEFAULT_COMMAND_ALLOWLIST,
+    ConfigError,
+    default_config_path,
+    load_config,
+)
 
 
 def _write_cfg(path: Path, payload: dict) -> Path:
@@ -110,6 +115,28 @@ def test_create_roots_genitore_mancente_fallisce(tmp_path: Path) -> None:
     with pytest.raises(ConfigError, match="inesistente"):
         load_config(cfg, create_roots=True)
     assert not root.exists()
+
+
+def test_allowlist_letta_da_config(tmp_path: Path) -> None:
+    cfg = _write_cfg(
+        tmp_path / "config.json",
+        {"workspace_roots": [str(tmp_path)], "security": {"command_allowlist": ["mine"]}},
+    )
+    assert load_config(cfg).security.command_allowlist == ("mine",)
+
+
+def test_allowlist_default_se_assente(tmp_path: Path) -> None:
+    cfg = _write_cfg(tmp_path / "config.json", {"workspace_roots": [str(tmp_path)]})
+    assert load_config(cfg).security.command_allowlist == DEFAULT_COMMAND_ALLOWLIST
+
+
+def test_allowlist_non_lista_rifiutata(tmp_path: Path) -> None:
+    cfg = _write_cfg(
+        tmp_path / "config.json",
+        {"workspace_roots": [str(tmp_path)], "security": {"command_allowlist": "dir"}},
+    )
+    with pytest.raises(ConfigError, match="command_allowlist"):
+        load_config(cfg)
 
 
 def test_bool_non_booleano_rifiutato(tmp_path: Path) -> None:

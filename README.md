@@ -84,6 +84,25 @@ rientrano nei messaggi → si ripete fino alla risposta finale o al limite di
 Le sicurezze vivono nel **dispatcher dei tool**, non nel prompt: anche un
 modello che "impazzisce" non può bypassarle.
 
+## Limiti noti
+
+La sicurezza è **difensiva in profondità**, non un sandbox:
+
+- **La blacklist non è un confine di sicurezza.** È fatta di regex: ha falsi
+  positivi (blocca anche cose innocue) e falsi negativi (alias, encoding,
+  variabili d'ambiente la aggirano). Il confine reale è la **conferma umana
+  con default NO**: tutto ciò che non è auto-approvato passa da lì.
+- **L'allowlist riduce la superficie, non è una gabbia.** `pytest`,
+  `python -m pytest` ed `ruff check` eseguono il codice della repository
+  (conftest, plugin): usarli solo se ci si fida del contenuto. Un eseguibile
+  omonimo presente prima su PATH verrebbe eseguito al posto di quello atteso.
+- **`ruff check --fix` modifica file** pur essendo in allowlist: rischio
+  accettato e documentato.
+- **Un comando approvato esplicitamente** passa anche con metacaratteri e path
+  arbitrari: la responsabilità dell'approvazione è di chi digita `y`.
+- **`cwd` forzato alla prima root non è un jail**: con `shell=True` un comando
+  approvato può raggiungere il filesystem con i permessi dell'utente.
+
 ## Configurazione (`config.json`)
 
 | Sezione | Chiave | Significato |
@@ -94,6 +113,7 @@ modello che "impazzisce" non può bypassarle.
 | `security` | `require_write_confirmation` | conferma y/N per gli scritture (default true) |
 | `security` | `require_command_confirmation` | conferma y/N per i comandi (default true) |
 | `security` | `command_blacklist` | stringhe/voci extra da bloccare |
+| `security` | `command_allowlist` | comandi read-only senza conferma (intestazione intera) |
 | `security` | `command_timeout_s` | timeout dei comandi (default 30) |
 | `agent` | `max_iterations` | limite di step ReAct per turno |
 | `agent` | `max_tool_output_chars` | troncamento osservazioni |

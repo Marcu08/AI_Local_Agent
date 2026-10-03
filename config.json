@@ -21,6 +21,18 @@
       "shutdown",
       "Remove-Item -Recurse -Force"
     ],
+    "command_allowlist": [
+      "dir",
+      "ls",
+      "type",
+      "cat",
+      "git status",
+      "git log",
+      "git diff",
+      "pytest",
+      "python -m pytest",
+      "ruff check"
+    ],
     "command_timeout_s": 30,
     "max_output_chars": 30000
   },

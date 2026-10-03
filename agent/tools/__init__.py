@@ -100,8 +100,9 @@ def create_default_registry() -> ToolRegistry:
             name="run_command",
             description=(
                 "Esegue un comando di terminale nella prima workspace_root. I comandi "
-                "distruttivi (rm -rf, format, ecc.) sono bloccati a monte e ogni "
-                "esecuzione richiede la conferma y/N dell'utente."
+                "distruttivi (rm -rf, format, ecc.) sono bloccati a monte; quelli in "
+                "allowlist (lettura) partono approvati, gli altri richiedono la "
+                "conferma y/N dell'utente."
             ),
             parameters={
                 "type": "object",

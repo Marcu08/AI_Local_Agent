@@ -20,6 +20,22 @@ DEFAULT_COMMAND_BLACKLIST: tuple[str, ...] = (
     "Remove-Item -Recurse -Force",
 )
 
+# Comandi read-only eseguibili SENZA conferma (testati dagli unit test, non
+# eseguiti qui): l'intera intestazione (primo token + sottoeventi) deve
+# corrispondere, e gli argomenti devono restare dentro le workspace_root.
+DEFAULT_COMMAND_ALLOWLIST: tuple[str, ...] = (
+    "dir",
+    "ls",
+    "type",
+    "cat",
+    "git status",
+    "git log",
+    "git diff",
+    "pytest",
+    "python -m pytest",
+    "ruff check",
+)
+
 
 class ConfigError(ValueError):
     """config.json mancante, malformato o con valori non validi."""
@@ -41,6 +57,7 @@ class SecurityConfig:
     require_write_confirmation: bool = True
     require_command_confirmation: bool = True
     command_blacklist: tuple[str, ...] = DEFAULT_COMMAND_BLACKLIST
+    command_allowlist: tuple[str, ...] = DEFAULT_COMMAND_ALLOWLIST
     command_timeout_s: float = 30.0
     max_output_chars: int = 30000
 
@@ -148,6 +165,15 @@ def load_config(
         command_blacklist = tuple(blacklist_raw)
     else:
         raise ConfigError("security.command_blacklist deve essere una lista di stringhe")
+    allowlist_raw = sec_raw.get("command_allowlist")
+    if allowlist_raw is None:
+        command_allowlist = DEFAULT_COMMAND_ALLOWLIST
+    elif isinstance(allowlist_raw, list) and all(
+        isinstance(x, str) and x.strip() for x in allowlist_raw
+    ):
+        command_allowlist = tuple(allowlist_raw)
+    else:
+        raise ConfigError("security.command_allowlist deve essere una lista di stringhe")
     security = SecurityConfig(
         require_write_confirmation=_as_bool(
             sec_raw.get("require_write_confirmation"), True, "security.require_write_confirmation"
@@ -158,6 +184,7 @@ def load_config(
             "security.require_command_confirmation",
         ),
         command_blacklist=command_blacklist,
+        command_allowlist=command_allowlist,
         command_timeout_s=_as_float(
             sec_raw.get("command_timeout_s"), 30.0, "security.command_timeout_s"
         ),

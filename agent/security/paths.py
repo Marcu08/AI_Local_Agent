@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -39,6 +40,29 @@ def is_allowed(path: str | Path, roots: Sequence[Path]) -> bool:
     except PathNotAllowedError:
         return False
     return True
+
+
+def resolves_outside_roots(target: str, roots: Sequence[Path]) -> bool:
+    """True se `target` cade fuori dalle workspace_root.
+
+    I path relativi sono risolti rispetto alla prima root (il cwd forzato dei
+    comandi). Un path con drive (`C:file`, imprevedibile) è sempre fuori.
+    """
+    if not roots:
+        return True
+    if re.match(r"^[A-Za-z]:", target):
+        return True
+    try:
+        p = Path(target).expanduser()
+    except (RuntimeError, OSError):
+        return True  # `~utente` indeterminabile: consideralo fuori
+    if not p.is_absolute():
+        p = roots[0] / p
+    resolved = p.resolve()
+    return not any(
+        resolved == root.resolve() or resolved.is_relative_to(root.resolve())
+        for root in roots
+    )
 
 
 def sensitive_root_warnings(roots: Sequence[Path]) -> list[str]:

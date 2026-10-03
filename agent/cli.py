@@ -83,7 +83,8 @@ def _print_config(console: Console, config: AgentConfig) -> None:
             f"max iterazioni: {config.max_iterations}\n"
             f"conferma scrittura: {config.security.require_write_confirmation}\n"
             f"conferma comando:   {config.security.require_command_confirmation}\n"
-            f"blacklist: {len(config.security.command_blacklist)} voci",
+            f"blacklist: {len(config.security.command_blacklist)} voci\n"
+            f"allowlist: {len(config.security.command_allowlist)} voci",
             title="Config",
         )
     )
