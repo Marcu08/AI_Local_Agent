@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from agent.security.paths import safe_resolve
+from agent.security.paths import PathNotAllowedError, safe_resolve
 from agent.tools.base import ToolContext, ToolResult, clip
 
 _MAX_ENTRIES = 500
@@ -15,7 +15,10 @@ def list_dir(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     raw_path = args.get("path")
     if not isinstance(raw_path, str) or not raw_path.strip():
         return ToolResult.failure("argomento 'path' mancante (stringa)")
-    path = safe_resolve(raw_path, ctx.config.workspace_roots)
+    try:
+        path = safe_resolve(raw_path, ctx.config.workspace_roots)
+    except PathNotAllowedError as e:
+        return ToolResult.failure(f"{type(e).__name__}: {e}", decision="bloccato")
     if not path.exists():
         return ToolResult.failure(f"cartella inesistente: {path}")
     if not path.is_dir():
@@ -43,7 +46,10 @@ def read_file(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     raw_path = args.get("path")
     if not isinstance(raw_path, str) or not raw_path.strip():
         return ToolResult.failure("argomento 'path' mancante (stringa)")
-    path = safe_resolve(raw_path, ctx.config.workspace_roots)
+    try:
+        path = safe_resolve(raw_path, ctx.config.workspace_roots)
+    except PathNotAllowedError as e:
+        return ToolResult.failure(f"{type(e).__name__}: {e}", decision="bloccato")
     if not path.exists():
         return ToolResult.failure(f"file inesistente: {path}")
     if path.is_dir():

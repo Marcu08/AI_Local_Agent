@@ -12,10 +12,15 @@ from agent.security.confirm import ConfirmationHandler
 
 @dataclass
 class ToolResult:
-    """Esito di un tool: output per l'LLM oppure errore (mai eccezione)."""
+    """Esito di un tool: output per l'LLM oppure errore (mai eccezione).
+
+    `decisione` è come il tool è arrivato a eseguirsi: auto / confermato /
+    rifiutato / bloccato (None = "auto", valorizzato dai tool con gate).
+    """
 
     output: str | None = None
     error: str | None = None
+    decision: str | None = None
 
     @property
     def ok(self) -> bool:
@@ -29,8 +34,8 @@ class ToolResult:
         return self.output or ""
 
     @classmethod
-    def failure(cls, message: str) -> ToolResult:
-        return cls(error=message)
+    def failure(cls, message: str, *, decision: str | None = None) -> ToolResult:
+        return cls(error=message, decision=decision)
 
 
 def clip(text: str, max_chars: int) -> str:

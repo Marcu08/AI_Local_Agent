@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import Callable
 from typing import Any
 
 from agent.config import AgentConfig
 from agent.llm.base import LLMClient, LLMResponse, ToolCall
+from agent.security.audit import AuditLog
 from agent.security.confirm import ConfirmationHandler
 from agent.tools import ToolContext, ToolRegistry
 
@@ -74,11 +76,13 @@ def run_turn(
     config: AgentConfig,
     confirm: ConfirmationHandler,
     on_event: EventHandler | None = None,
+    audit: AuditLog | None = None,
 ) -> str:
     """Esegue un turno ReAct completo e ritorna la risposta finale.
 
     `history` deve iniziare con il messaggio di system e viene esteso in place
     con tutto ciò che il turno produce (user, assistant, tool observations).
+    Se `audit` è fornito, ogni tool call produce una riga su logs/audit.jsonl.
     """
     emit = on_event or _noop
     ctx = ToolContext(config=config, confirm=confirm)
@@ -102,7 +106,17 @@ def run_turn(
 
         for call in response.tool_calls:
             emit("act", f"{call.name}({_fmt_args(call.arguments)})")
+            started = time.perf_counter()
             result = registry.dispatch(call.name, call.arguments, ctx)
+            duration_ms = int((time.perf_counter() - started) * 1000)
+            if audit is not None:
+                audit.record(
+                    tool=call.name,
+                    arguments=call.arguments,
+                    decision=result.decision or "auto",
+                    outcome="ok" if result.ok else "errore",
+                    duration_ms=duration_ms,
+                )
             observation = result.as_observation
             emit("observation", observation)
             history.append(

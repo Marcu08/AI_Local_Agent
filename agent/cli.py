@@ -13,6 +13,7 @@ from agent.config import AgentConfig, ConfigError, load_config
 from agent.llm.base import LLMClient, LLMError
 from agent.llm.mock_client import MockClient, final_response, tool_call_response
 from agent.loop import SYSTEM_PROMPT, run_turn
+from agent.security.audit import AuditLog
 from agent.security.confirm import RichConfirmation, ScriptedConfirm
 from agent.security.paths import sensitive_root_warnings
 from agent.tools import ToolRegistry, create_default_registry
@@ -101,6 +102,7 @@ def _run(llm: LLMClient, registry: ToolRegistry, config: AgentConfig, console: C
     confirm = RichConfirmation(console)
     on_event = make_on_event(console)
     history = _new_history()
+    audit = AuditLog()
     while True:
         try:
             user_input = console.input("[bold yellow]Tu>[/] ").strip()
@@ -130,6 +132,7 @@ def _run(llm: LLMClient, registry: ToolRegistry, config: AgentConfig, console: C
                 config=config,
                 confirm=confirm,
                 on_event=on_event,
+                audit=audit,
             )
         except LLMError as e:
             console.print(f"[red]Errore LLM:[/] {e}")
@@ -150,6 +153,7 @@ def _run_demo(llm: LLMClient, registry: ToolRegistry, config: AgentConfig, conso
             config=config,
             confirm=confirm,
             on_event=on_event,
+            audit=AuditLog(),
         )
     except LLMError as e:
         console.print(f"[red]Errore LLM:[/] {e}")

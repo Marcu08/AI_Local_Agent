@@ -6,7 +6,7 @@ import difflib
 from pathlib import Path
 from typing import Any
 
-from agent.security.paths import safe_resolve
+from agent.security.paths import PathNotAllowedError, safe_resolve
 from agent.tools.base import ToolContext, ToolResult, clip
 
 
@@ -34,10 +34,14 @@ def write_file(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     content = args.get("content")
     if not isinstance(content, str):
         return ToolResult.failure("argomento 'content' mancante (stringa)")
-    path = safe_resolve(raw_path, ctx.config.workspace_roots)
+    try:
+        path = safe_resolve(raw_path, ctx.config.workspace_roots)
+    except PathNotAllowedError as e:
+        return ToolResult.failure(f"{type(e).__name__}: {e}", decision="bloccato")
     if path.exists() and path.is_dir():
         return ToolResult.failure(f"è una cartella, non un file: {path}")
 
+    decision = "auto"
     existing: str | None = None
     if path.exists():
         try:
@@ -58,12 +62,16 @@ def write_file(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         approved = ctx.confirm.confirm(f"Scrittura file: {path}", detail)
         if not approved:
             return ToolResult.failure(
-                f"Scrittura rifiutata dall'utente: il file {path} non è stato modificato."
+                f"Scrittura rifiutata dall'utente: il file {path} non è stato modificato.",
+                decision="rifiutato",
             )
+        decision = "confermato"
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
     except OSError as e:
-        return ToolResult.failure(f"scrittura fallita: {e}")
+        return ToolResult.failure(f"scrittura fallita: {e}", decision=decision)
     verb = "Creato" if existing is None else "Aggiornato"
-    return ToolResult(output=f"{verb}: {path} ({len(content)} caratteri)")
+    return ToolResult(
+        output=f"{verb}: {path} ({len(content)} caratteri)", decision=decision
+    )

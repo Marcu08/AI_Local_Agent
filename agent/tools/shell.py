@@ -23,14 +23,19 @@ def run_command(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     if not isinstance(command, str) or not command.strip():
         return ToolResult.failure("argomento 'command' mancante (stringa)")
     command = command.strip()
+    decision = "auto"
 
     roots = ctx.config.workspace_roots
     match = find_destructive_match(command, ctx.config.security.command_blacklist)
     if match:
-        return ToolResult.failure(f"COMANDO BLOCCATO dalla blacklist ({match}): {command}")
+        return ToolResult.failure(
+            f"COMANDO BLOCCATO dalla blacklist ({match}): {command}", decision="bloccato"
+        )
     path_block = find_path_based_block(command, roots)
     if path_block:
-        return ToolResult.failure(f"COMANDO BLOCCATO ({path_block}): {command}")
+        return ToolResult.failure(
+            f"COMANDO BLOCCATO ({path_block}): {command}", decision="bloccato"
+        )
 
     cwd = roots[0]
     if ctx.config.security.require_command_confirmation:
@@ -47,8 +52,10 @@ def run_command(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
             approved = ctx.confirm.confirm("Esecuzione comando", detail)
             if not approved:
                 return ToolResult.failure(
-                    "Comando rifiutato dall'utente: nessun comando è stato eseguito."
+                    "Comando rifiutato dall'utente: nessun comando è stato eseguito.",
+                    decision="rifiutato",
                 )
+            decision = "confermato"
 
     timeout = ctx.config.security.command_timeout_s
     try:
@@ -63,9 +70,11 @@ def run_command(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
             timeout=timeout,
         )
     except subprocess.TimeoutExpired:
-        return ToolResult.failure(f"timeout dopo {timeout}s: {command}")
+        return ToolResult.failure(f"timeout dopo {timeout}s: {command}", decision=decision)
     except OSError as e:
-        return ToolResult.failure(f"esecuzione fallita: {type(e).__name__}: {e}")
+        return ToolResult.failure(
+            f"esecuzione fallita: {type(e).__name__}: {e}", decision=decision
+        )
 
     parts = [f"exit code: {proc.returncode}"]
     stdout = (proc.stdout or "").rstrip("\n")
@@ -77,4 +86,6 @@ def run_command(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     output = "\n".join(parts)
     if not stdout and not stderr:
         output += "\n(nessun output)"
-    return ToolResult(output=clip(output, ctx.config.max_tool_output_chars))
+    return ToolResult(
+        output=clip(output, ctx.config.max_tool_output_chars), decision=decision
+    )
