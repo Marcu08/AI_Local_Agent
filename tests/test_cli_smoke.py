@@ -93,7 +93,12 @@ def test_smoke_cli_crea_workspace_mancante(tmp_path: Path) -> None:
 
 
 def test_smoke_cli_avviso_root_home(tmp_path: Path) -> None:
-    """Root che coincide con la home: avviso all'avvio (home via USERPROFILE)."""
+    """Root che coincide con la home: avviso all'avvio.
+
+    Indipendente da home e OS: Path.home() nel subprocess legge HOME su
+    posix/WSL e USERPROFILE su Windows, quindi entrambe vengono sovrascritte
+    sulle env del figlio (1.5.7).
+    """
     fakehome = tmp_path / "fakehome"
     fakehome.mkdir()
     cfg = tmp_path / "config.json"
@@ -101,7 +106,7 @@ def test_smoke_cli_avviso_root_home(tmp_path: Path) -> None:
         json.dumps({"workspace_roots": [str(fakehome)], "llm": {"provider": "mock"}}),
         encoding="utf-8",
     )
-    env = dict(os.environ, USERPROFILE=str(fakehome))
+    env = dict(os.environ, HOME=str(fakehome), USERPROFILE=str(fakehome))
     proc = subprocess.run(
         [sys.executable, "-m", "agent", "--config", str(cfg)],
         input="",

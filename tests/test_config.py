@@ -223,3 +223,15 @@ def test_max_iterations_non_valido(tmp_path: Path) -> None:
     )
     with pytest.raises(ConfigError, match="max_iterations"):
         load_config(cfg)
+
+
+def test_requires_python_sotto_o_uguale_3_11() -> None:
+    """requires-python non deve tornare sopra >=3.11 (Fase 1.5.1, ribadito in 1.5.7)."""
+    import tomllib
+
+    pyproject = Path(__file__).resolve().parent.parent / "pyproject.toml"
+    data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+    requires = data["project"]["requires-python"]
+    min_version = requires.replace(">=", "").split(",")[0].strip()
+    parts = tuple(int(p) for p in min_version.split("."))
+    assert parts <= (3, 11), f"requires-python alzato oltre 3.11: {requires!r}"
