@@ -121,6 +121,35 @@ def test_search_files_non_tocca_il_filesystem(workspace, config) -> None:
     assert target.read_text(encoding="utf-8") == "contenuto originale\n"
 
 
+# --- 1.6.6: file sensibili saltati con dichiarazione -------------------------
+
+def test_search_files_salta_file_sensibili(workspace, config) -> None:
+    """.env non viene greppato; il file pubblico sì, e il contatore lo dichiara."""
+    (workspace / ".env").write_text("API_KEY=comune123\n", encoding="utf-8")
+    (workspace / "pubblico.txt").write_text("comune123 qui\n", encoding="utf-8")
+
+    result, confirm = _dispatch(config, {"query": "comune123"})
+
+    assert result.ok
+    out = result.output or ""
+    assert "pubblico.txt:1: comune123 qui" in out
+    assert ".env:" not in out, "mai citare righe di un file sensibile"
+    assert "1 file sensibili ignorati" in out
+    assert confirm.calls == [], "search_files non chiede conferme: salta e dichiara"
+
+
+def test_search_files_diretto_su_file_sensibile(workspace, config) -> None:
+    """Cercare dentro .env direttamente: zero hit + riga con il contatore."""
+    (workspace / ".env").write_text("API_KEY=solo_qua42\n", encoding="utf-8")
+
+    result, _ = _dispatch(config, {"query": "solo_qua42", "path": ".env"})
+
+    assert result.ok
+    out = result.output or ""
+    assert "Nessuna occorrenza" in out  # zero hit: il contenuto non è stato letto
+    assert "1 file sensibili ignorati" in out
+
+
 # --- 1.6.6: containment per candidato (symlink verso l'esterno) -------------
 
 def test_symlink_a_file_esterno_non_aperto(workspace, config, tmp_path) -> None:

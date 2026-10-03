@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 from typing import Any
 
+from agent.security.allowlist import _is_sensitive_target
 from agent.security.paths import PathNotAllowedError, is_allowed, safe_resolve
 from agent.tools.base import ToolContext, ToolResult, clip
 
@@ -75,6 +76,7 @@ def search_files(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
 
     hits: list[str] = []
     scanned = 0
+    sensitive_skipped = 0
     truncated = False
     for file in candidates:
         if len(hits) >= _MAX_RESULTS:
@@ -88,6 +90,11 @@ def search_files(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
                 continue
         except (OSError, RuntimeError, ValueError):
             continue  # symlink spezzato o path irrisolvibile: salta
+        # 1.6.6: i file sensibili (.env, *.pem, ...) non vengono greppati mai:
+        # la ricerca è silenziosa per il contenuto, ma dichiara quanti ne ha saltati
+        if _is_sensitive_target(resolved):
+            sensitive_skipped += 1
+            continue
         scanned += 1
         try:
             if resolved.stat().st_size > _MAX_FILE_BYTES:
@@ -111,14 +118,19 @@ def search_files(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
                     truncated = True
                     break
 
+    sensitive_note = f"{sensitive_skipped} file sensibili ignorati" if sensitive_skipped else ""
     if not hits:
-        return ToolResult(
-            output=f"Nessuna occorrenza di {query!r} in {start} "
-            f"(file esaminati: {scanned})"
-        )
+        lines = [
+            f"Nessuna occorrenza di {query!r} in {start} (file esaminati: {scanned})"
+        ]
+        if sensitive_note:
+            lines.append(sensitive_note)
+        return ToolResult(output="\n".join(lines))
     parts = ["\n".join(hits)]
     if truncated:
         parts.append(f"... [troncato: massimo {_MAX_RESULTS} occorrenze]")
     if scan_capped:
         parts.append(f"... [limite di file esaminati raggiunto: {_MAX_FILES_SCANNED}]")
+    if sensitive_note:
+        parts.append(sensitive_note)
     return ToolResult(output=clip("\n".join(parts), ctx.config.security.max_output_chars))

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from agent.security.allowlist import _is_sensitive_target
 from agent.security.paths import PathNotAllowedError, safe_resolve
 from agent.tools.base import ToolContext, ToolResult, clip
 
@@ -54,6 +55,23 @@ def read_file(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         return ToolResult.failure(f"file inesistente: {path}")
     if path.is_dir():
         return ToolResult.failure(f"è una cartella, non un file: {path}")
+    # 1.6.6: un file sensibile (.env, *.pem, id_rsa*, .git/config, *.key) viene
+    # mostrato solo dietro conferma HIL, come `cat`/`type` in allowlist; il gate
+    # è lo stesso che comanda i comandi (disattivare le conferme = fidarsi).
+    decision: str | None = None
+    if _is_sensitive_target(path) and ctx.config.security.require_command_confirmation:
+        detail = f"lettura di un file sensibile: {path}"
+        if ctx.seen_untrusted:
+            detail += (
+                "\n\n[avviso] azione proposta dopo la lettura di contenuto "
+                "esterno (tool_output non fidato)"
+            )
+        if not ctx.confirm.confirm(f"Lettura file sensibile: {path}", detail):
+            return ToolResult.failure(
+                f"Lettura rifiutata dall'utente: il file {path} non è stato mostrato.",
+                decision="rifiutato",
+            )
+        decision = "confermato"
     try:
         text = path.read_text(encoding="utf-8", errors="replace")
     except OSError as e:
@@ -78,4 +96,7 @@ def read_file(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     last_line = offset + len(selected) - 1 if selected else offset
     header = f"{path} — righe {offset}-{last_line} di {len(lines)}"
     body = "\n".join(numbered) if numbered else "(nessuna riga)"
-    return ToolResult(output=clip(header + "\n" + body, ctx.config.max_tool_output_chars))
+    return ToolResult(
+        output=clip(header + "\n" + body, ctx.config.max_tool_output_chars),
+        decision=decision,
+    )

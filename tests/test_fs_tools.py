@@ -95,6 +95,62 @@ def test_read_file_offset_invalido(registry, config, allow_confirm) -> None:
     assert "interi" in (result.error or "")
 
 
+# --- 1.6.6: read_file su file sensibili --------------------------------------
+
+def test_read_file_sensibile_chiede_conferma(registry, allow_confirm, workspace) -> None:
+    """.env richiede conferma e, approvato, il contenuto arriva con decisione."""
+    (workspace / ".env").write_text("API_KEY=topsecret42\n", encoding="utf-8")
+    config = AgentConfig(workspace_roots=(workspace,))
+
+    result = registry.dispatch("read_file", {"path": ".env"}, _ctx(config, allow_confirm))
+
+    assert result.ok, result.error
+    assert "topsecret42" in result.output
+    assert result.decision == "confermato"
+    assert len(allow_confirm.calls) == 1
+    action, detail = allow_confirm.calls[0]
+    assert "sensibile" in action and ".env" in action
+    assert "sensibile" in detail
+
+
+def test_read_file_sensibile_negato_non_mostra_contenuto(
+    registry, deny_confirm, config, workspace
+) -> None:
+    (workspace / ".env").write_text("API_KEY=topsecret42\n", encoding="utf-8")
+
+    result = registry.dispatch("read_file", {"path": ".env"}, _ctx(config, deny_confirm))
+
+    assert not result.ok
+    assert result.decision == "rifiutato"
+    assert "topsecret42" not in (result.error or ""), "niente contenuto in caso di NO"
+    assert "non è stato mostrato" in (result.error or "")
+
+
+def test_read_file_normale_nessuna_conferma(registry, deny_confirm, config) -> None:
+    """Un file non sensibile si legge anche con conferme che rispondono NO."""
+    result = registry.dispatch("read_file", {"path": "notes.md"}, _ctx(config, deny_confirm))
+    assert result.ok
+    assert "ciao mondo" in result.output
+    assert result.decision is None
+    assert deny_confirm.calls == []
+
+
+def test_read_file_sensibile_con_conferme_disattivate(registry, workspace) -> None:
+    """Con require_command_confirmation=False vale la stessa regola di cat/type."""
+    (workspace / ".env").write_text("API_KEY=topsecret42\n", encoding="utf-8")
+    config = AgentConfig(
+        workspace_roots=(workspace,),
+        security=SecurityConfig(require_command_confirmation=False),
+    )
+    confirm = ScriptedConfirm(default=False)  # risponderebbe NO, ma non viene chiesto
+
+    result = registry.dispatch("read_file", {"path": ".env"}, _ctx(config, confirm))
+
+    assert result.ok
+    assert "topsecret42" in result.output
+    assert confirm.calls == []
+
+
 # --- write_file -------------------------------------------------------------
 
 def test_write_file_nuovo_confermato(registry, config, allow_confirm, workspace) -> None:
