@@ -2,7 +2,7 @@
 
 from agent.tools.base import Tool, ToolContext, ToolRegistry, ToolResult, clip
 from agent.tools.fs_read import list_dir, read_file
-from agent.tools.fs_write import write_file
+from agent.tools.fs_write import edit_file, write_file
 from agent.tools.memory_tool import search_memory
 from agent.tools.shell import run_command
 
@@ -93,6 +93,39 @@ def create_default_registry() -> ToolRegistry:
                 "required": ["path", "content"],
             },
             handler=write_file,
+        )
+    )
+    registry.register(
+        Tool(
+            name="edit_file",
+            description=(
+                "Modifica un file ESISTENTE sostituendo un'unica occorrenza di "
+                "old_str con new_str, senza riscrivere il contenuto intero. "
+                "old_str deve essere UNIVOCO: se compare 0 o più di una volta il "
+                "tool restituisce un errore e non tocca il file. PRIMA di scrivere "
+                "mostra il diff e chiede all'utente di confermare con y/N."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "File da modificare (relativo alla prima root o assoluto)",
+                    },
+                    "old_str": {
+                        "type": "string",
+                        "description": (
+                            "Stringa esatta da sostituire (deve comparire una sola volta)"
+                        ),
+                    },
+                    "new_str": {
+                        "type": "string",
+                        "description": "Sostituzione (stringa vuota = cancellare old_str)",
+                    },
+                },
+                "required": ["path", "old_str", "new_str"],
+            },
+            handler=edit_file,
         )
     )
     registry.register(

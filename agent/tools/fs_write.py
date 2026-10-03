@@ -75,3 +75,83 @@ def write_file(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     return ToolResult(
         output=f"{verb}: {path} ({len(content)} caratteri)", decision=decision
     )
+
+
+def edit_file(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+    """Sostituisce l'unica occorrenza di `old_str` con `new_str`: diff + conferma.
+
+    Regole (1.6.1):
+    - il file deve ESISTERE ed essere testo UTF-8: non è uno strumento di
+      creazione (niente riscrittura di file interi per modifiche piccole);
+    - `old_str` deve comparire ESATTAMENTE una volta: 0 o >1 occorrenze =
+      errore chiaro e nessuna scrittura;
+    - prima di scrivere mostra il diff e chiede y/N (stesso gate di write_file).
+    """
+    raw_path = args.get("path")
+    if not isinstance(raw_path, str) or not raw_path.strip():
+        return ToolResult.failure("argomento 'path' mancante (stringa)")
+    old_str = args.get("old_str")
+    if not isinstance(old_str, str) or not old_str:
+        return ToolResult.failure("argomento 'old_str' mancante (stringa non vuota)")
+    new_str = args.get("new_str")
+    if not isinstance(new_str, str):
+        return ToolResult.failure(
+            "argomento 'new_str' mancante (stringa, ammesso il vuoto)"
+        )
+    if old_str == new_str:
+        return ToolResult.failure("old_str e new_str identiche: nessuna modifica da fare")
+    try:
+        path = safe_resolve(raw_path, ctx.config.workspace_roots)
+    except PathNotAllowedError as e:
+        return ToolResult.failure(f"{type(e).__name__}: {e}", decision="bloccato")
+    if not path.exists():
+        return ToolResult.failure(
+            f"file inesistente: {path} (edit_file modifica solo file esistenti)"
+        )
+    if path.is_dir():
+        return ToolResult.failure(f"è una cartella, non un file: {path}")
+    try:
+        # strict: un file non-UTF8 non va riscritto (lo farebbe a pezzi)
+        existing = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        return ToolResult.failure(
+            f"non è un file di testo UTF-8: {path} (nessuna modifica effettuata)"
+        )
+    except OSError as e:
+        return ToolResult.failure(f"lettura del file fallita: {e}")
+
+    count = existing.count(old_str)
+    if count == 0:
+        return ToolResult.failure(
+            f"old_str non trovata (0 occorrenze) in {path}: nessuna modifica effettuata"
+        )
+    if count > 1:
+        return ToolResult.failure(
+            f"old_str ambigua: {count} occorrenze in {path}: fornisci una stringa "
+            "più lunga che identifichi una sola posizione"
+        )
+    proposed = existing.replace(old_str, new_str, 1)
+
+    decision = "auto"
+    diff = clip(_build_diff(existing, proposed, path), ctx.config.security.max_output_chars)
+    if ctx.config.security.require_write_confirmation:
+        detail = diff
+        if ctx.seen_untrusted:
+            detail += (
+                "\n\n[avviso] azione proposta dopo la lettura di contenuto "
+                "esterno (tool_output non fidato)"
+            )
+        approved = ctx.confirm.confirm(f"Modifica file: {path}", detail)
+        if not approved:
+            return ToolResult.failure(
+                f"Modifica rifiutata dall'utente: il file {path} non è stato modificato.",
+                decision="rifiutato",
+            )
+        decision = "confermato"
+    try:
+        path.write_text(proposed, encoding="utf-8")
+    except OSError as e:
+        return ToolResult.failure(f"scrittura fallita: {e}", decision=decision)
+    return ToolResult(
+        output=f"Aggiornato: {path} (1 occorrenza sostituita)", decision=decision
+    )
