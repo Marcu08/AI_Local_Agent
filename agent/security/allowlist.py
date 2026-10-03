@@ -10,7 +10,8 @@ Un comando è auto-approvabile SOLO se:
 - il primo token è un nome di comando (mai un path) e l'intestazione corrisponde
   a una voce di ``security.command_allowlist`` (case-insensitive, senza .exe);
 - ogni flag è tra quelli ammessi dalla voce corrispondente;
-- nessun argomento è un path assoluto e nessun ``..`` esce dalle workspace_root.
+- nessun argomento è un path assoluto e ogni argomento-path, risolto con
+  ``resolve()`` (symlink/junction compresi), resta dentro le workspace_root.
 
 Tutto il resto richiede la conferma umana (default NO). Questa funzione riduce
 la superficie: NON è un confine di sicurezza (vedi README "Limiti noti").
@@ -142,6 +143,13 @@ def autoapprove_reason(
             continue
         if _is_absoluteish(arg):
             return f"argomento con path assoluto ({arg})"
-        if ".." in Path(arg).parts and resolves_outside_roots(arg, roots):
+        # Ogni argomento viene risolto (symlink/junction compresi) rispetto
+        # alla root di lavoro: un link dentro la root che punta fuori non
+        # passa senza conferma (1.5.7). Copre anche `..`.
+        try:
+            outside = resolves_outside_roots(arg, roots)
+        except (OSError, RuntimeError, ValueError):
+            return f"argomento non risolvibile ({arg})"
+        if outside:
             return f"argomento che esce dalle workspace_root ({arg})"
     return None
