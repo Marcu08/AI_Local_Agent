@@ -6,7 +6,7 @@ Agente AI locale in **Python** che agisce sul tuo PC con **tool calling**, **Mem
 
 ## Requisiti
 
-- Python 3.14+
+- Python 3.11+
 - [Ollama](https://ollama.com) installato e in esecuzione (`localhost:11434`)
 - Un modello con supporto tool calling:
 
@@ -69,8 +69,11 @@ rientrano nei messaggi → si ripete fino alla risposta finale o al limite di
 ## Regole di sicurezza
 
 1. **Lettura** — libera solo dentro le `workspace_root` di `config.json`
-   (default: `C:/Users/marzu/OneDrive/Desktop`). I path vengono canonicalizzati:
-   `..`, separatori misti e symlink verso l'esterno sono rifiutati.
+   (default: `C:/Users/marzu/OneDrive/Desktop/agent_workspace`, creata al primo
+   avvio se manca). Allargare le root è una scelta esplicita nel config. I path
+   vengono canonicalizzati: `..`, separatori misti e symlink verso l'esterno
+   sono rifiutati. Se una root contiene la home o cartelle sensibili
+   (`~/.ssh`, `~/.aws`, cartelle di sistema), all'avvio compare un avviso.
 2. **Scrittura** — `write_file` mostra sempre il diff e si interrompe: si
    procede solo se digiti `y`. Default della conferma: **NO**.
 3. **Terminale** — `run_command` viene bloccato a monte dalla blacklist
@@ -98,7 +101,7 @@ modello che "impazzisce" non può bypassarle.
 ## Test
 
 ```bash
-.venv\Scripts\python -m pytest        # 95 test, nessuna rete/Ollama necessari
+.venv\Scripts\python -m pytest        # nessuna rete/Ollama necessari
 .venv\Scripts\python -m ruff check .
 ```
 

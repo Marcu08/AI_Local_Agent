@@ -14,6 +14,7 @@ from agent.llm.base import LLMClient, LLMError
 from agent.llm.mock_client import MockClient, final_response, tool_call_response
 from agent.loop import SYSTEM_PROMPT, run_turn
 from agent.security.confirm import RichConfirmation, ScriptedConfirm
+from agent.security.paths import sensitive_root_warnings
 from agent.tools import ToolRegistry, create_default_registry
 
 DEMO_INPUT = "Elenca i file della cartella di lavoro"
@@ -172,13 +173,19 @@ def main(argv: list[str] | None = None) -> int:
 
     console = Console()
     try:
-        config = load_config(args.config)
+        config = load_config(
+            args.config,
+            create_roots=True,
+            on_created=lambda p: console.print(f"[yellow]Cartella workspace creata:[/] {p}"),
+        )
         llm = build_client(config, args.provider)
     except ConfigError as e:
         console.print(f"[red]Config non valido:[/] {e}")
         return 2
 
     registry = create_default_registry()
+    for warning in sensitive_root_warnings(config.workspace_roots):
+        console.print(f"[yellow]Avviso workspace:[/] {warning}")
     console.print(
         Panel(
             f"provider: {config.llm.provider} / {config.llm.model}\n"

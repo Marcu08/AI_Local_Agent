@@ -1,5 +1,5 @@
 {
-  "workspace_roots": ["C:/Users/marzu/OneDrive/Desktop"],
+  "workspace_roots": ["C:/Users/marzu/OneDrive/Desktop/agent_workspace"],
   "llm": {
     "provider": "ollama",
     "model": "llama3.1:8b",

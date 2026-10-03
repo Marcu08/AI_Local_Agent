@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -83,8 +83,18 @@ def _as_float(value: Any, default: float, name: str) -> float:
     return float(value)
 
 
-def load_config(path: str | Path | None = None) -> AgentConfig:
-    """Legge e valida config.json, restituendo un AgentConfig immutabile."""
+def load_config(
+    path: str | Path | None = None,
+    *,
+    create_roots: bool = False,
+    on_created: Callable[[Path], None] | None = None,
+) -> AgentConfig:
+    """Legge e valida config.json, restituendo un AgentConfig immutabile.
+
+    Se ``create_roots=True`` le workspace_root mancanti vengono create (deve
+    esistere il genitore) e segnalate via ``on_created``; di default una root
+    inesistente è un errore.
+    """
     cfg_path = Path(path) if path is not None else default_config_path()
     try:
         raw_text = cfg_path.read_text(encoding="utf-8")
@@ -106,7 +116,15 @@ def load_config(path: str | Path | None = None) -> AgentConfig:
             raise ConfigError(f"workspace_root non valida: {item!r}")
         root = Path(item).expanduser().resolve()
         if not root.is_dir():
-            raise ConfigError(f"workspace_root inesistente: {root}")
+            if create_roots and root.parent.is_dir():
+                try:
+                    root.mkdir()
+                except OSError as e:
+                    raise ConfigError(f"workspace_root non creabile: {root} ({e})") from e
+                if on_created is not None:
+                    on_created(root)
+            else:
+                raise ConfigError(f"workspace_root inesistente: {root}")
         roots.append(root)
 
     llm_raw = raw.get("llm", {})

@@ -92,6 +92,26 @@ def test_workspace_root_inesistente(tmp_path: Path) -> None:
         load_config(cfg)
 
 
+def test_create_roots_crea_root_mancante(tmp_path: Path) -> None:
+    """Con create_roots la root mancante viene creata e segnalata via on_created."""
+    root = tmp_path / "agent_workspace"
+    cfg = _write_cfg(tmp_path / "config.json", {"workspace_roots": [str(root)]})
+    created: list[Path] = []
+    loaded = load_config(cfg, create_roots=True, on_created=created.append)
+    assert root.is_dir()
+    assert created == [root.resolve()]
+    assert loaded.workspace_roots == (root.resolve(),)
+
+
+def test_create_roots_genitore_mancente_fallisce(tmp_path: Path) -> None:
+    """Se manca il genitore la root non viene creata: errore chiaro."""
+    root = tmp_path / "non_esiste" / "workspace"
+    cfg = _write_cfg(tmp_path / "config.json", {"workspace_roots": [str(root)]})
+    with pytest.raises(ConfigError, match="inesistente"):
+        load_config(cfg, create_roots=True)
+    assert not root.exists()
+
+
 def test_bool_non_booleano_rifiutato(tmp_path: Path) -> None:
     cfg = _write_cfg(
         tmp_path / "config.json",

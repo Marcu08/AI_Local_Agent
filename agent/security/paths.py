@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -38,3 +39,38 @@ def is_allowed(path: str | Path, roots: Sequence[Path]) -> bool:
     except PathNotAllowedError:
         return False
     return True
+
+
+def sensitive_root_warnings(roots: Sequence[Path]) -> list[str]:
+    """Avvisi se una workspace_root contiene o coincide con cartelle sensibili.
+
+    Segnala: root che contiene/coincide con la home, o root che contiene
+    cartelle come ~/.ssh, ~/.aws, ~/AppData o le cartelle di sistema Windows.
+    Una root normale (es. una sottocartella della home) non produce avvisi.
+    """
+    home = Path.home().resolve()
+    sensitive: list[tuple[Path, str]] = [
+        (home / ".ssh", "~/.ssh (chiavi SSH)"),
+        (home / ".aws", "~/.aws (credenziali cloud)"),
+        (home / ".gnupg", "~/.gnupg (chiavi GPG)"),
+        (home / "AppData", "~/AppData (dati applicazioni)"),
+        (home / "Documents", "~/Documenti"),
+    ]
+    for env_name, label in (
+        ("SystemRoot", "cartella di Windows"),
+        ("ProgramFiles", "Program Files"),
+    ):
+        value = os.environ.get(env_name)
+        if value:
+            sensitive.append((Path(value).resolve(), label))
+
+    warnings: list[str] = []
+    for raw_root in roots:
+        root = Path(raw_root).resolve()
+        if root == home or home.is_relative_to(root):
+            warnings.append(f"workspace_root {root} contiene o coincide con la home dell'utente")
+        else:
+            for target, label in sensitive:
+                if target.is_relative_to(root):
+                    warnings.append(f"workspace_root {root} contiene {label}")
+    return warnings
