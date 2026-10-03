@@ -248,3 +248,37 @@ def test_config_json_reale_dichiara_limiti_storico() -> None:
     agent = data["agent"]
     assert agent["history_max_messages"] == 40
     assert agent["history_max_chars"] == 50000
+
+
+# --- 1.6.6: conversations_dir ------------------------------------------------
+
+def test_conversations_dir_configurabile(tmp_path: Path) -> None:
+    root = tmp_path / "ws"
+    root.mkdir()
+    conv = tmp_path / "altre" / "conversazioni"
+    cfg = _write_cfg(
+        tmp_path / "config.json",
+        {"workspace_roots": [str(root)], "conversations_dir": str(conv)},
+    )
+    loaded = load_config(cfg)
+    assert loaded.conversations_dir == conv.resolve()
+
+
+def test_conversations_dir_default_none(tmp_path: Path) -> None:
+    cfg = _write_cfg(tmp_path / "config.json", {"workspace_roots": [str(tmp_path)]})
+    assert load_config(cfg).conversations_dir is None  # fallback ~/.agent al uso
+
+
+def test_conversations_dir_dentro_workspace_rifiutata(tmp_path: Path) -> None:
+    """Deve stare FUORI dalle root: i file di conversazione non sono leggibili."""
+    root = tmp_path / "ws"
+    root.mkdir()
+    cfg = _write_cfg(
+        tmp_path / "config.json",
+        {
+            "workspace_roots": [str(root)],
+            "conversations_dir": str(root / "conversazioni"),
+        },
+    )
+    with pytest.raises(ConfigError, match="FUORI"):
+        load_config(cfg)

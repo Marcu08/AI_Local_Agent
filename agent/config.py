@@ -78,6 +78,10 @@ class AgentConfig:
     # vengono tolti per gruppi atomici (mai una coppia tool_call/osservazione)
     history_max_messages: int = 40
     history_max_chars: int = 50000
+    # cartella delle conversazioni /save /load (1.6.6): None = default
+    # ~/.agent/conversations. Deve stare FUORI dalle workspace_root: i file
+    # delle conversazioni non devono mai essere leggibili dai tool del modello.
+    conversations_dir: Path | None = None
 
 
 def default_config_path() -> Path:
@@ -224,10 +228,29 @@ def load_config(
     agent_raw = raw.get("agent", {})
     if not isinstance(agent_raw, dict):
         raise ConfigError("sezione agent deve essere un oggetto")
+
+    conv_raw = raw.get("conversations_dir")
+    conversations_dir: Path | None = None
+    if conv_raw is not None:
+        if not isinstance(conv_raw, str) or not conv_raw.strip():
+            raise ConfigError("conversations_dir deve essere una stringa non vuota")
+        conversations_dir = Path(conv_raw).expanduser().resolve()
+        # 1.6.6: le conversazioni stanno fuori dalle root, così i tool del
+        # modello non possono mai leggerle (e /load non carica dalla workspace)
+        for root in roots:
+            root_resolved = Path(root).resolve()
+            if conversations_dir == root_resolved or conversations_dir.is_relative_to(
+                root_resolved
+            ):
+                raise ConfigError(
+                    "conversations_dir deve stare FUORI dalle workspace_roots "
+                    f"({conversations_dir} è dentro {root_resolved})"
+                )
     return AgentConfig(
         workspace_roots=tuple(roots),
         llm=llm,
         security=security,
+        conversations_dir=conversations_dir,
         max_iterations=_as_int(agent_raw.get("max_iterations"), 15, "agent.max_iterations"),
         max_tool_output_chars=_as_int(
             agent_raw.get("max_tool_output_chars"), 20000, "agent.max_tool_output_chars"

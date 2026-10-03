@@ -155,6 +155,7 @@ All'avvio la CLI forza UTF-8 su `stdout`, `stderr` e `stdin` con
 | Sezione | Chiave | Significato |
 |---|---|---|
 | top | `workspace_roots` | cartelle che l'agente può esplorare |
+| top | `conversations_dir` | cartella di `/save` `/load` (default `~/.agent/conversations`, deve stare fuori dalle workspace) |
 | `llm` | `provider`, `model`, `base_url` | provider: `ollama` \| `mock` |
 | `llm` | `num_predict` | max token generati per chiamata (default 1024, anti-runaway) |
 | `security` | `require_write_confirmation` | conferma y/N per gli scritture (default true) |

@@ -24,9 +24,12 @@ def workspace(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def config(workspace: Path) -> AgentConfig:
-    """Config di test: una sola root (il workspace sintetico), conferme attive."""
-    return AgentConfig(workspace_roots=(workspace,))
+def config(workspace: Path, tmp_path: Path) -> AgentConfig:
+    """Config di test: root = workspace sintetico, conversazioni in tmp (1.6.6)."""
+    return AgentConfig(
+        workspace_roots=(workspace,),
+        conversations_dir=tmp_path / "conversations",
+    )
 
 
 @pytest.fixture

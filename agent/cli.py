@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 import sys
+from pathlib import Path
 from typing import Any
 
 from rich.console import Console
@@ -28,17 +29,32 @@ Comandi:  /help  mostra questo aiuto
           /tools elenca i tool disponibili
           /config mostra la configurazione
           /reset azzera la cronologia della conversazione
-          /save <nome>  salva la conversazione nella workspace (JSON)
-          /load <nome>  ricarica una conversazione salvata
+          /save <nome>  salva la conversazione in ~/.agent/conversations (JSON)
+          /load <nome>  ricarica una conversazione salvata (schema validato)
           /quit  esci
 Inoltra qualsiasi altra riga all'agente."""
+
+
+# limite di dimensione di un file di conversazione accettato da /load (1.6.6)
+_MAX_CONVERSATION_BYTES = 5_000_000
+
+
+def _conversations_dir(config: AgentConfig) -> Path:
+    """Cartella delle conversazioni: config.conversations_dir o default home.
+
+    Sempre FUORI dalle workspace_root (validato in load_config): i file di
+    conversazione non sono contenuto che il modello possa leggere coi tool.
+    """
+    if config.conversations_dir is not None:
+        return config.conversations_dir
+    return Path.home() / ".agent" / "conversations"
 
 
 def _conversation_filename(name: str) -> tuple[str | None, str | None]:
     """Nome file di una conversazione: semplice e senza separatori.
 
     Ritorna (filename, None) se valido, altrimenti (None, errore).
-    Niente path: il file vive sempre nella prima workspace_root (1.6.4).
+    Niente path: il file vive solo nella cartella conversazioni (1.6.6).
     """
     if not name or name != name.strip():
         return None, "nome non valido: niente spazi ai bordi"
@@ -51,14 +67,65 @@ def _conversation_filename(name: str) -> tuple[str | None, str | None]:
     return (name if name.endswith(".json") else name + ".json"), None
 
 
+def _validate_conversation(data: object) -> tuple[list[dict[str, Any]] | None, str | None]:
+    """Schema di una conversazione salvata (1.6.6): lista valida o errore chiaro.
+
+    Regole: solo ruoli user/assistant/tool (MAI system: il system prompt viene
+    rigenerato a ogni /load), content sempre stringa, tool_calls ben formate
+    ({function: {name, arguments}}), tool_name stringa se presente.
+    """
+    if not isinstance(data, list):
+        return None, "atteso un elenco di messaggi"
+    out: list[dict[str, Any]] = []
+    for i, item in enumerate(data):
+        if not isinstance(item, dict):
+            return None, f"messaggio {i}: atteso un oggetto"
+        role = item.get("role")
+        if role is None:
+            return None, f"messaggio {i}: campo 'role' mancante"
+        if role == "system":
+            return None, (
+                f"messaggio {i}: ruolo 'system' non ammesso "
+                "(il system prompt viene rigenerato)"
+            )
+        if role not in {"user", "assistant", "tool"}:
+            return None, f"messaggio {i}: ruolo sconosciuto {role!r}"
+        if not isinstance(item.get("content"), str):
+            return None, f"messaggio {i}: campo 'content' mancante o non stringa"
+        calls = item.get("tool_calls")
+        if calls is not None:
+            if role != "assistant":
+                return None, f"messaggio {i}: 'tool_calls' ammesso solo su assistant"
+            if not isinstance(calls, list) or not calls:
+                return None, f"messaggio {i}: 'tool_calls' deve essere una lista non vuota"
+            for j, call in enumerate(calls):
+                if not isinstance(call, dict):
+                    return None, f"messaggio {i}: tool_call {j} non è un oggetto"
+                fn = call.get("function")
+                if not isinstance(fn, dict):
+                    return None, f"messaggio {i}: tool_call {j} senza 'function'"
+                name = fn.get("name")
+                arguments = fn.get("arguments")
+                if not isinstance(name, str) or not name:
+                    return None, f"messaggio {i}: tool_call {j} con 'name' non valido"
+                if not isinstance(arguments, str):
+                    return None, f"messaggio {i}: tool_call {j} con 'arguments' non valido"
+        tool_name = item.get("tool_name")
+        if tool_name is not None and not isinstance(tool_name, str):
+            return None, f"messaggio {i}: 'tool_name' deve essere una stringa"
+        out.append(item)
+    return out, None
+
+
 def handle_repl_command(
     line: str, history: list[dict[str, Any]], config: AgentConfig
 ) -> str | None:
     """Gestisce /reset, /save e /load; None = non è un comando REPL gestito.
 
-    I file di conversazione stanno nella PRIMA workspace_root, come nome file
-    semplice (nessun path, vedi _conversation_filename). /load sostituisce la
-    cronologia ma riusa SEMPRE il system prompt corrente.
+    I file stanno in conversations_dir (default ~/.agent/conversations, fuori
+    dalle workspace_root). /save omette il messaggio di system; /load valida lo
+    schema per intero (errore chiaro senza toccare la cronologia) e rigenera
+    sempre il system prompt corrente.
     """
     parts = line.split(maxsplit=1)
     cmd = parts[0]
@@ -75,32 +142,43 @@ def handle_repl_command(
         filename, error = _conversation_filename(arg)
         if filename is None:
             return f"{cmd} rifiutato: {error or 'nome non valido'}"
-        path = config.workspace_roots[0] / filename
+        path = _conversations_dir(config) / filename
 
         if cmd == "/save":
+            # il system prompt non viene mai salvato: è rigenerato a ogni load
+            payload = [
+                m
+                for m in history
+                if isinstance(m, dict) and m.get("role") in {"user", "assistant", "tool"}
+            ]
             try:
+                path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(
-                    json.dumps(history, ensure_ascii=False, indent=2), encoding="utf-8"
+                    json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
                 )
             except OSError as e:
                 return f"Salvataggio fallito: {e}"
-            return f"Cronologia salvata: {path} ({len(history)} messaggi)"
+            return f"Cronologia salvata: {path} ({len(payload)} messaggi)"
 
         # /load
         if not path.exists():
             return f"Caricamento fallito: file inesistente ({path})"
         try:
+            size = path.stat().st_size
+        except OSError as e:
+            return f"Caricamento fallito: impossibile leggere {path} ({e})"
+        if size > _MAX_CONVERSATION_BYTES:
+            return (
+                f"Caricamento fallito: file troppo grande "
+                f"({size} byte, massimo {_MAX_CONVERSATION_BYTES})"
+            )
+        try:
             data = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, UnicodeDecodeError, json.JSONDecodeError) as e:
             return f"Caricamento fallito: JSON non valido ({e})"
-        if not isinstance(data, list) or not all(isinstance(m, dict) for m in data):
-            return "Caricamento fallito: struttura non valida (atteso un elenco di messaggi)"
-        loaded = [
-            m
-            for m in data
-            if m.get("role") in {"user", "assistant", "tool"}
-            and isinstance(m.get("content"), (str, type(None)))
-        ]
+        loaded, schema_error = _validate_conversation(data)
+        if schema_error is not None or loaded is None:
+            return f"Caricamento fallito: {schema_error}"
         history.clear()
         history.extend(_new_history())  # il system prompt è quello corrente
         history.extend(loaded)
