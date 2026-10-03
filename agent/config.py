@@ -69,6 +69,10 @@ class AgentConfig:
     security: SecurityConfig = field(default_factory=SecurityConfig)
     max_iterations: int = 15
     max_tool_output_chars: int = 20000
+    # limiti della cronologia: al raggiungimento, i messaggi più vecchi
+    # vengono tolti per gruppi atomici (mai una coppia tool_call/osservazione)
+    history_max_messages: int = 40
+    history_max_chars: int = 50000
 
 
 def default_config_path() -> Path:
@@ -203,6 +207,12 @@ def load_config(
         max_iterations=_as_int(agent_raw.get("max_iterations"), 15, "agent.max_iterations"),
         max_tool_output_chars=_as_int(
             agent_raw.get("max_tool_output_chars"), 20000, "agent.max_tool_output_chars"
+        ),
+        history_max_messages=_as_int(
+            agent_raw.get("history_max_messages"), 40, "agent.history_max_messages"
+        ),
+        history_max_chars=_as_int(
+            agent_raw.get("history_max_chars"), 50000, "agent.history_max_chars"
         ),
     )
 

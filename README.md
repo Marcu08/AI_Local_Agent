@@ -42,7 +42,7 @@ Con stdin non-interattivo (piped) esegue un singolo turno di demo e esce.
 ```
 agent/
 ├── cli.py            # REPL rich: rendering 💭 Thought / 🔧 Act / 👁 Observation
-├── loop.py           # ciclo ReAct con limite di iterazioni
+├── loop.py           # ciclo ReAct, limite iterazioni, trimming cronologia
 ├── config.py         # load_config() → AgentConfig (dataclass validate)
 ├── llm/
 │   ├── base.py       # protocol LLMClient, LLMResponse, ToolCall
@@ -57,6 +57,8 @@ agent/
 ├── security/
 │   ├── paths.py      # safe_resolve(): whitelist, anti path-traversal
 │   ├── blacklist.py  # regex comandi distruttivi (+ voci da config)
+│   ├── allowlist.py  # autoapprove_reason(): comandi read-only senza conferma
+│   ├── audit.py      # AuditLog JSONL: una riga per tool call
 │   └── confirm.py    # ConfirmationHandler iniettabile (test senza input())
 └── memory/           # SCAFFOLD Fase 2: ingest, store (ChromaDB lazy), retrieval
 ```
@@ -83,6 +85,32 @@ rientrano nei messaggi → si ripete fino alla risposta finale o al limite di
 
 Le sicurezze vivono nel **dispatcher dei tool**, non nel prompt: anche un
 modello che "impazzisce" non può bypassarle.
+
+## Modello di minaccia
+
+Cosa l'agente si propone di difendere, e da chi:
+
+- **Contenuto esterno che cerca di dettare ordini all'LLM** (prompt injection
+  da file letti, output di comandi, documenti): le osservazioni arrivano
+  racchiuse in `<tool_output untrusted="true">` e il system prompt vieta di
+  trattarle come istruzioni; ogni azione resta comunque dietro blacklist e
+  conferma. Il delimitatore riduce il rischio, non lo elimina (vedi Limiti noti).
+- **Un modello che "sbaglia" o viene convinto** a compiere azioni dannose:
+  la sicurezza vive nel dispatcher (path whitelist, blacklist, allowlist,
+  diff + conferma con default NO), non nella bontà del prompt.
+- **Azioni distruttive accidentali** (`rm -rf`, `format`, sovrascritture):
+  blacklist a monte di subprocess, diff always-on, conferma `y/N` (default NO),
+  `cwd` forzato e timeout sui comandi.
+- **Lettura di path sensibili** (`~/.ssh`, chiavi, cartelle di sistema):
+  path canonicalizzati dentro le `workspace_root`, avviso all'avvio se una
+  root è sensibile.
+- **Verifica a posteriori**: `logs/audit.jsonl` registra ogni tool call
+  (decisione `auto`/`confermato`/`rifiutato`/`bloccato`, esito, durata) con
+  argomenti troncati a un'anteprima: mai il contenuto completo di un file.
+
+**Fuori perimetro**: chi controlla la macchina o il processo Ollama può già
+fare tutto ciò che l'agente può fare; attacchi al provider LLM, all'host o
+alla rete non rientrano in questa fase.
 
 ## Limiti noti
 
@@ -117,6 +145,8 @@ La sicurezza è **difensiva in profondità**, non un sandbox:
 | `security` | `command_timeout_s` | timeout dei comandi (default 30) |
 | `agent` | `max_iterations` | limite di step ReAct per turno |
 | `agent` | `max_tool_output_chars` | troncamento osservazioni |
+| `agent` | `history_max_messages` | max messaggi in cronologia (default 40, system incluso) |
+| `agent` | `history_max_chars` | max caratteri in cronologia (default 50000) |
 
 ## Test
 

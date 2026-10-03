@@ -53,6 +53,33 @@ def test_num_predict_configurabile(tmp_path: Path) -> None:
         load_config(cfg2)
 
 
+def test_history_limiti_configurabili(tmp_path: Path) -> None:
+    """agent.history_max_messages / history_max_chars: default e validazione."""
+    cfg = _write_cfg(
+        tmp_path / "config.json",
+        {
+            "workspace_roots": [str(tmp_path)],
+            "agent": {"history_max_messages": 12, "history_max_chars": 9000},
+        },
+    )
+    loaded = load_config(cfg)
+    assert loaded.history_max_messages == 12
+    assert loaded.history_max_chars == 9000
+
+    defaults = load_config(
+        _write_cfg(tmp_path / "config.json", {"workspace_roots": [str(tmp_path)]})
+    )
+    assert defaults.history_max_messages == 40
+    assert defaults.history_max_chars == 50000
+
+    cfg2 = _write_cfg(
+        tmp_path / "config.json",
+        {"workspace_roots": [str(tmp_path)], "agent": {"history_max_messages": 0}},
+    )
+    with pytest.raises(ConfigError, match="history_max_messages"):
+        load_config(cfg2)
+
+
 def test_load_config_eseguibile_del_progetto() -> None:
     """Struttura del config.json consegnato con il progetto.
 

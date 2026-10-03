@@ -45,6 +45,111 @@ def wrap_untrusted(observation: str) -> str:
     """Delimita un'osservazione come dato non fidato per l'LLM."""
     return f"{UNTRUSTED_OPEN}\n{observation}\n{UNTRUSTED_CLOSE}"
 
+
+# Messaggio sintetico per un'osservazione andata perduta (turno interrotto):
+# onestamente non afferma che l'azione non sia partita, solo che la risposta
+# non è stata registrata.
+_MISSING_OBSERVATION = (
+    "ERRORE: osservazione mancante (turno interrotto): "
+    "esito dell'azione sconosciuto."
+)
+
+
+def _text(message: dict[str, Any]) -> str:
+    content = message.get("content")
+    return content if isinstance(content, str) else ""
+
+
+def _repair_tail(history: list[dict[str, Any]]) -> None:
+    """Chiude una coda con tool call prive di osservazioni (turno interrotto).
+
+    Copre entrambi i punti di interruzione: osservazioni parziali (0..k-1 su n)
+    e coda che finisce sull'assistant con tool_calls ancora senza risposte.
+    """
+    end = len(history)
+    while end > 0 and history[end - 1].get("role") == "tool":
+        end -= 1
+    if end == 0:
+        return
+    last = history[end - 1]
+    if last.get("role") != "assistant" or not last.get("tool_calls"):
+        return
+    calls = last["tool_calls"]
+    responses = len(history) - end
+    for index in range(responses, len(calls)):
+        call = calls[index] if index < len(calls) else {}
+        name = call.get("function", {}).get("name", "sconosciuto")
+        history.append(
+            {
+                "role": "tool",
+                "content": wrap_untrusted(f"{_MISSING_OBSERVATION} (tool: {name})"),
+                "tool_name": name,
+            }
+        )
+
+
+def _split_groups(conversation: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
+    """Raggruppa la conversazione in turni: da un messaggio user fino al prossimo.
+
+    Un assistant con tool_calls e tutte le sue osservazioni nascono sempre
+    dentro lo stesso turno, quindi entrano ed escono insieme dalla cronologia:
+    un taglio non può mai produrre una coppia orfana.
+    """
+    groups: list[list[dict[str, Any]]] = []
+    current: list[dict[str, Any]] = []
+    for message in conversation:
+        if message.get("role") == "user" and current:
+            groups.append(current)
+            current = []
+        current.append(message)
+    if current:
+        groups.append(current)
+    return groups
+
+
+def trim_history(
+    history: list[dict[str, Any]],
+    *,
+    max_messages: int,
+    max_chars: int,
+) -> None:
+    """Accorcia `history` in place, prima dell'aggiunta del nuovo input.
+
+    Invarianti garantiti:
+    - il messaggio di system (index 0) non viene mai rimosso;
+    - i messaggi vecchi vengono tolti per turno intero: un assistant con
+      tool_calls resta sempre con tutte le sue osservazioni (mai orfani);
+    - prima il vincolo sul numero di messaggi, poi sui caratteri totali;
+    - una coda con tool call prive di osservazioni viene riparata con
+      osservazioni sintetiche, così la history resta validabile dall'LLM.
+    """
+    if not history:
+        return
+    _repair_tail(history)
+
+    has_system = history[0].get("role") == "system"
+    head = history[:1] if has_system else []
+    conversation = history[1:] if has_system else list(history)
+    if not conversation:
+        return
+
+    groups = _split_groups(conversation)
+
+    def total_chars(kept: list[list[dict[str, Any]]]) -> int:
+        return sum(len(_text(msg)) for group in kept for msg in group) + sum(
+            len(_text(msg)) for msg in head
+        )
+
+    # 1) numero di messaggi (system incluso nel conteggio)
+    while len(head) + sum(len(group) for group in groups) > max_messages and groups:
+        groups.pop(0)
+    # 2) caratteri totali
+    while groups and total_chars(groups) > max_chars:
+        groups.pop(0)
+
+    history[:] = head + [msg for group in groups for msg in group]
+
+
 # kind: thought | act | observation | final | limit
 EventHandler = Callable[[str, str], None]
 
@@ -83,8 +188,16 @@ def run_turn(
     `history` deve iniziare con il messaggio di system e viene esteso in place
     con tutto ciò che il turno produce (user, assistant, tool observations).
     Se `audit` è fornito, ogni tool call produce una riga su logs/audit.jsonl.
+    Prima dell'input corrente la cronologia viene accorciata se supera i limiti
+    (agent.history_max_messages / history_max_chars), mai spezzando le coppie
+    tool_call/osservazione.
     """
     emit = on_event or _noop
+    trim_history(
+        history,
+        max_messages=config.history_max_messages,
+        max_chars=config.history_max_chars,
+    )
     ctx = ToolContext(config=config, confirm=confirm)
     history.append({"role": "user", "content": user_input})
     tools = registry.to_schemas()
