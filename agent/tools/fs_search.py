@@ -12,7 +12,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from agent.security.paths import PathNotAllowedError, safe_resolve
+from agent.security.paths import PathNotAllowedError, is_allowed, safe_resolve
 from agent.tools.base import ToolContext, ToolResult, clip
 
 # limiti del tool: prevedibile anche su alberi enormi (costanti, non config)
@@ -80,16 +80,24 @@ def search_files(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         if len(hits) >= _MAX_RESULTS:
             truncated = True
             break
+        try:
+            # 1.6.6: ogni candidato viene risolto e deve restare dentro le root:
+            # un symlink (file o cartella) che punta fuori non viene mai aperto
+            resolved = file.resolve()
+            if not is_allowed(resolved, ctx.config.workspace_roots):
+                continue
+        except (OSError, RuntimeError, ValueError):
+            continue  # symlink spezzato o path irrisolvibile: salta
         scanned += 1
         try:
-            if file.stat().st_size > _MAX_FILE_BYTES:
+            if resolved.stat().st_size > _MAX_FILE_BYTES:
                 continue
-            if file.suffix.lower() in _BINARY_EXTS:
+            if resolved.suffix.lower() in _BINARY_EXTS:
                 continue
-            with file.open("rb") as fh:
+            with resolved.open("rb") as fh:
                 if b"\x00" in fh.read(_SNIFF_BYTES):
                     continue  # binario rilevato dallo sniff
-            text = file.read_text(encoding="utf-8", errors="replace")
+            text = resolved.read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue  # file illeggibile (permessi, link spezzati): salta
         display = file.relative_to(start) if start.is_dir() else Path(file.name)

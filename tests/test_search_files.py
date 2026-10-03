@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from agent.security.confirm import ScriptedConfirm
 from agent.tools import ToolContext, ToolResult, create_default_registry
 from agent.tools.fs_search import _MAX_FILE_BYTES, _MAX_RESULTS
@@ -117,3 +119,56 @@ def test_search_files_non_tocca_il_filesystem(workspace, config) -> None:
     _dispatch(config, {"query": "originale"})
 
     assert target.read_text(encoding="utf-8") == "contenuto originale\n"
+
+
+# --- 1.6.6: containment per candidato (symlink verso l'esterno) -------------
+
+def test_symlink_a_file_esterno_non_aperto(workspace, config, tmp_path) -> None:
+    """Un symlink del workspace che punta a un file fuori non viene letto."""
+    outside = tmp_path / "outside" / "secret.txt"  # "segreto\n", fuori dalle root
+    link = workspace / "link_esterno.txt"
+    try:
+        link.symlink_to(outside)
+    except OSError:
+        pytest.skip("symlink non supportati su questo sistema")
+
+    result, _ = _dispatch(config, {"query": "segreto"})
+
+    assert result.ok
+    out = result.output or ""
+    assert "Nessuna occorrenza" in out, out  # zero hit = il file fuori non è stato letto
+    assert "secret.txt:" not in out, "il contenuto fuori root non deve comparire"
+
+
+def test_symlink_a_cartella_esterna_non_percorsa(workspace, config, tmp_path) -> None:
+    """Una symlink di cartella verso l'esterno non apre alcun contenuto fuori root."""
+    outside = tmp_path / "outside"  # contiene secret.txt con "segreto"
+    link = workspace / "collega_esterna"
+    try:
+        link.symlink_to(outside, target_is_directory=True)
+    except OSError:
+        pytest.skip("symlink non supportati su questo sistema")
+
+    result, _ = _dispatch(config, {"query": "segreto"})
+
+    assert result.ok
+    out = result.output or ""
+    assert "Nessuna occorrenza" in out, out
+    assert "secret.txt:" not in out, "nessuna hit dal contenuto esterno"
+
+
+def test_file_normale_trovato_nonostante_symlink(workspace, config, tmp_path) -> None:
+    """I symlink esterni saltati, il file regolare dentro le root viene trovato."""
+    (workspace / "pubblico.txt").write_text("marcatore trova_me_xyz\n", encoding="utf-8")
+    try:
+        (workspace / "link_file.txt").symlink_to(tmp_path / "outside" / "secret.txt")
+        (workspace / "link_dir").symlink_to(tmp_path / "outside", target_is_directory=True)
+    except OSError:
+        pytest.skip("symlink non supportati su questo sistema")
+
+    result, _ = _dispatch(config, {"query": "trova_me_xyz"})
+
+    assert result.ok
+    out = result.output or ""
+    assert "pubblico.txt:1: marcatore trova_me_xyz" in out
+    assert "segreto" not in out, "niente contenuto dai link esterni"
