@@ -101,8 +101,9 @@ def test_search_memory_non_implementato(config, allow_confirm) -> None:
     ctx = ToolContext(config=config, confirm=allow_confirm)
     result = registry.dispatch("search_memory", {"query": "OCR progetto X"}, ctx)
     assert result.ok
-    assert "non ancora implementata" in result.output
-    assert "OCR progetto X" in result.output
+    output = result.output or ""
+    assert "non ancora implementata" in output
+    assert "OCR progetto X" in output
 
 
 def test_search_memory_query_mancante(config, allow_confirm) -> None:

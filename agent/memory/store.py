@@ -18,7 +18,7 @@ class VectorStore:
 
     def _collection(self):  # type: ignore[no-untyped-def]
         try:
-            import chromadb
+            import chromadb  # pyright: ignore[reportMissingImports]  # lazy: opzionale in Fase 1
         except ImportError as e:
             raise VectorStoreUnavailableError(
                 "chromadb non installato: pip install chromadb (previsto in Fase 2)."

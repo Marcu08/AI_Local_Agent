@@ -73,8 +73,9 @@ def test_esecuzione_confermata(config, allow_confirm, calls, fake_run, workspace
         "run_command", {"command": "echo ciao"}, _ctx(config, allow_confirm)
     )
     assert result.ok
-    assert "exit code: 0" in result.output
-    assert "ok stdout" in result.output
+    output = result.output or ""
+    assert "exit code: 0" in output
+    assert "ok stdout" in output
     assert len(calls) == 1
     # cwd forzato alla prima workspace_root, output catturato
     assert calls[0]["cwd"] == str(workspace)
@@ -113,5 +114,6 @@ def test_exit_code_diverso_da_zero_è_osservazione(config, allow_confirm, monkey
     )
     # exit code != 0 non è un errore del tool: è un'osservazione per l'LLM
     assert result.ok
-    assert "exit code: 2" in result.output
-    assert "fallito" in result.output
+    output = result.output or ""
+    assert "exit code: 2" in output
+    assert "fallito" in output
