@@ -8,6 +8,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from agent.security.allowlist import AllowlistEntry
+
 DEFAULT_COMMAND_BLACKLIST: tuple[str, ...] = (
     "rm -rf",
     "rm -fr",
@@ -20,20 +22,23 @@ DEFAULT_COMMAND_BLACKLIST: tuple[str, ...] = (
     "Remove-Item -Recurse -Force",
 )
 
+# Flag read-only ammessi su git diff/log (1.5.7): qualsiasi altro flag —
+# es. --output (scrive file), --ext-diff, --no-index, --textconv — forza la
+# conferma. pytest e ruff NON sono in allowlist: eseguono codice della
+# repository (conftest, plugin) e richiedono la conferma a ogni invocazione.
+_GIT_READ_ONLY_FLAGS: tuple[str, ...] = ("--stat", "--name-only", "--cached", "-n", "--oneline")
+
 # Comandi read-only eseguibili SENZA conferma (testati dagli unit test, non
-# eseguiti qui): l'intera intestazione (primo token + sottoeventi) deve
-# corrispondere, e gli argomenti devono restare dentro le workspace_root.
-DEFAULT_COMMAND_ALLOWLIST: tuple[str, ...] = (
-    "dir",
-    "ls",
-    "type",
-    "cat",
-    "git status",
-    "git log",
-    "git diff",
-    "pytest",
-    "python -m pytest",
-    "ruff check",
+# eseguiti qui): l'intestazione deve corrispondere e solo i flag dichiarati
+# dalla voce passano senza conferma.
+DEFAULT_COMMAND_ALLOWLIST: tuple[AllowlistEntry, ...] = (
+    AllowlistEntry("dir", ("/b",)),
+    AllowlistEntry("ls", ("-l", "-a", "-la", "-1")),
+    AllowlistEntry("type"),
+    AllowlistEntry("cat"),
+    AllowlistEntry("git status", ("-s", "-b", "-sb")),
+    AllowlistEntry("git log", _GIT_READ_ONLY_FLAGS),
+    AllowlistEntry("git diff", _GIT_READ_ONLY_FLAGS),
 )
 
 
@@ -57,7 +62,7 @@ class SecurityConfig:
     require_write_confirmation: bool = True
     require_command_confirmation: bool = True
     command_blacklist: tuple[str, ...] = DEFAULT_COMMAND_BLACKLIST
-    command_allowlist: tuple[str, ...] = DEFAULT_COMMAND_ALLOWLIST
+    command_allowlist: tuple[AllowlistEntry, ...] = DEFAULT_COMMAND_ALLOWLIST
     command_timeout_s: float = 30.0
     max_output_chars: int = 30000
 
@@ -171,13 +176,32 @@ def load_config(
         raise ConfigError("security.command_blacklist deve essere una lista di stringhe")
     allowlist_raw = sec_raw.get("command_allowlist")
     if allowlist_raw is None:
-        command_allowlist = DEFAULT_COMMAND_ALLOWLIST
-    elif isinstance(allowlist_raw, list) and all(
-        isinstance(x, str) and x.strip() for x in allowlist_raw
-    ):
-        command_allowlist = tuple(allowlist_raw)
+        command_allowlist: tuple[AllowlistEntry, ...] = DEFAULT_COMMAND_ALLOWLIST
+    elif isinstance(allowlist_raw, list):
+        entries: list[AllowlistEntry] = []
+        for item in allowlist_raw:
+            if isinstance(item, str) and item.strip():
+                entries.append(AllowlistEntry(item))  # retrocompat: nessun flag
+            elif isinstance(item, dict):
+                cmd = item.get("command")
+                flags = item.get("flags", [])
+                if (
+                    not isinstance(cmd, str)
+                    or not cmd.strip()
+                    or not isinstance(flags, list)
+                    or not all(isinstance(f, str) and f.strip() for f in flags)
+                ):
+                    raise ConfigError(
+                        "voci command_allowlist: serve {'command': str, 'flags': [str]}"
+                    )
+                entries.append(AllowlistEntry(cmd, tuple(flags)))
+            else:
+                raise ConfigError(
+                    "security.command_allowlist deve essere una lista di stringhe o oggetti"
+                )
+        command_allowlist = tuple(entries)
     else:
-        raise ConfigError("security.command_allowlist deve essere una lista di stringhe")
+        raise ConfigError("security.command_allowlist deve essere una lista")
     security = SecurityConfig(
         require_write_confirmation=_as_bool(
             sec_raw.get("require_write_confirmation"), True, "security.require_write_confirmation"

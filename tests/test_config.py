@@ -13,6 +13,7 @@ from agent.config import (
     default_config_path,
     load_config,
 )
+from agent.security.allowlist import AllowlistEntry
 
 
 def _write_cfg(path: Path, payload: dict) -> Path:
@@ -149,12 +150,52 @@ def test_allowlist_letta_da_config(tmp_path: Path) -> None:
         tmp_path / "config.json",
         {"workspace_roots": [str(tmp_path)], "security": {"command_allowlist": ["mine"]}},
     )
-    assert load_config(cfg).security.command_allowlist == ("mine",)
+    assert load_config(cfg).security.command_allowlist == (AllowlistEntry("mine"),)
+
+
+def test_allowlist_con_flag_da_config(tmp_path: Path) -> None:
+    """Voce oggetto {command, flags}: i flag ammessi vivono nella voce stessa."""
+    cfg = _write_cfg(
+        tmp_path / "config.json",
+        {
+            "workspace_roots": [str(tmp_path)],
+            "security": {
+                "command_allowlist": [
+                    "cat",
+                    {"command": "git diff", "flags": ["--stat", "-n"]},
+                ]
+            },
+        },
+    )
+    assert load_config(cfg).security.command_allowlist == (
+        AllowlistEntry("cat"),
+        AllowlistEntry("git diff", ("--stat", "-n")),
+    )
+
+
+def test_allowlist_voce_malformata_rifiutata(tmp_path: Path) -> None:
+    for bad in (
+        [{"flags": ["--stat"]}],  # manca command
+        [{"command": "git diff", "flags": "--stat"}],  # flags non è una lista
+        [{"command": "git diff", "flags": [42]}],  # flag non stringa
+        [42],  # tipo sconosciuto
+    ):
+        cfg = _write_cfg(
+            tmp_path / "config.json",
+            {"workspace_roots": [str(tmp_path)], "security": {"command_allowlist": bad}},
+        )
+        with pytest.raises(ConfigError, match="command_allowlist"):
+            load_config(cfg)
 
 
 def test_allowlist_default_se_assente(tmp_path: Path) -> None:
     cfg = _write_cfg(tmp_path / "config.json", {"workspace_roots": [str(tmp_path)]})
     assert load_config(cfg).security.command_allowlist == DEFAULT_COMMAND_ALLOWLIST
+    # 1.5.7: pytest/ruff fuori dall'auto-approvazione
+    commands = {entry.command for entry in DEFAULT_COMMAND_ALLOWLIST}
+    assert "pytest" not in commands and "ruff check" not in commands
+    git_entry = next(e for e in DEFAULT_COMMAND_ALLOWLIST if e.command == "git diff")
+    assert "--output" not in git_entry.flags and "--ext-diff" not in git_entry.flags
 
 
 def test_allowlist_non_lista_rifiutata(tmp_path: Path) -> None:

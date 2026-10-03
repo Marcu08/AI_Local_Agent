@@ -123,12 +123,14 @@ def test_exit_code_diverso_da_zero_è_osservazione(config, allow_confirm, monkey
     assert "fallito" in output
 
 
-# --- tabella esiti 1.5.3 -------------------------------------------------------
+# --- tabella esiti 1.5.3 + flag 1.5.7 ------------------------------------------
 # Ogni riga: (comando, esito atteso ∈ auto | conferma | bloccato).
 # subprocess è SEMPRE finto (fake_run): qui si testa la classificazione, non
 # l'esecuzione. `{outside}` = path assoluto fuori dalle workspace_root.
+# 1.5.7: ogni voce allowlist dichiara i flag ammessi; qualsiasi flag non
+# elencato (es. `git log -p`) e pytest/ruff (fuori allowlist) → conferma.
 _COMMAND_TABLE: list[tuple[str, str]] = [
-    # auto: allowlist con argomenti dentro le root (21)
+    # auto: allowlist, solo flag dichiarati, argomenti dentro le root (15)
     ("dir", "auto"),
     ("dir /b", "auto"),  # skip su non-Windows: /b è una convenzione Windows
     ("DIR", "auto"),
@@ -140,17 +142,11 @@ _COMMAND_TABLE: list[tuple[str, str]] = [
     ("cat sub/../file.txt", "auto"),
     ("git status", "auto"),
     ("git status -sb", "auto"),
-    ("git log --oneline -5", "auto"),
-    ("git log -p", "auto"),
+    ("git log --oneline -n 5", "auto"),
     ("git diff", "auto"),
     ("git diff HEAD~1", "auto"),
-    ("pytest", "auto"),
-    ("pytest tests/test_smoke.py -q", "auto"),
-    ("python -m pytest", "auto"),
-    ("python -m pytest -k smoke", "auto"),
-    ("ruff check .", "auto"),
-    ("ruff check agent/", "auto"),
-    # conferma: non in allowlist, metacaratteri, path assoluto o fuori root (15)
+    ("git diff --stat", "auto"),
+    # conferma: non in allowlist, flag non elencato, metacaratteri o path (22)
     ("echo ciao", "conferma"),
     ('python -c "print(1)"', "conferma"),
     ("del file.txt", "conferma"),
@@ -160,12 +156,20 @@ _COMMAND_TABLE: list[tuple[str, str]] = [
     ("cat ../../etc/passwd", "conferma"),
     ("git push", "conferma"),
     ("git checkout main", "conferma"),
+    ("git log -p", "conferma"),  # -p non è tra i flag read-only ammessi
+    ("git log --oneline -5", "conferma"),  # usa -n, non il glifo numerico
     ("npm run test", "conferma"),
     ("dir %USERPROFILE%", "conferma"),
     ("ls -la & dir", "conferma"),
     ("dir > out.txt", "conferma"),
     ('"{outside}"', "conferma"),
-    # bloccato: blacklist regex o path fuori root (20)
+    ("pytest", "conferma"),  # pytest/ruff eseguono codice della repo: mai auto
+    ("pytest tests/test_smoke.py -q", "conferma"),
+    ("python -m pytest", "conferma"),
+    ("python -m pytest -k smoke", "conferma"),
+    ("ruff check .", "conferma"),
+    ("ruff check agent/", "conferma"),
+    # bloccato: blacklist regex o path fuori root (21)
     ("rm -rf /", "bloccato"),
     ("rmdir /s /q node_modules", "bloccato"),
     ("del /f /q file.txt", "bloccato"),
@@ -245,7 +249,11 @@ def test_autoapprove_motivi(config, workspace) -> None:
     assert autoapprove_reason("rm -rf /", allow, roots) is not None
     assert autoapprove_reason("cat file.txt", allow, roots) is None
     assert autoapprove_reason("dir", allow, roots) is None
-    assert autoapprove_reason("git log --oneline -3", allow, roots) is None
+    assert autoapprove_reason("git log --oneline -n 3", allow, roots) is None
+    # 1.5.7: flag fuori dalla allowlist della voce → conferma
+    assert autoapprove_reason("git diff --output=fuori.diff", allow, roots) is not None
+    assert autoapprove_reason("git log -p", allow, roots) is not None
+    assert autoapprove_reason("pytest", allow, roots) is not None
 
 
 def test_autoapprove_git_sottocomando_non_in_allowlist(config) -> None:

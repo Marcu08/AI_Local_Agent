@@ -1,6 +1,6 @@
 """Modulo sicurezza: whitelist path, blacklist/allowlist comandi, conferme HIL, audit."""
 
-from agent.security.allowlist import autoapprove_reason
+from agent.security.allowlist import AllowlistEntry, autoapprove_reason
 from agent.security.audit import AuditLog, default_audit_path
 from agent.security.blacklist import (
     find_destructive_match,
@@ -11,6 +11,7 @@ from agent.security.confirm import ConfirmationHandler, RichConfirmation, Script
 from agent.security.paths import PathNotAllowedError, is_allowed, safe_resolve
 
 __all__ = [
+    "AllowlistEntry",
     "AuditLog",
     "ConfirmationHandler",
     "PathNotAllowedError",

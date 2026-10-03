@@ -22,16 +22,19 @@
       "Remove-Item -Recurse -Force"
     ],
     "command_allowlist": [
-      "dir",
-      "ls",
-      "type",
-      "cat",
-      "git status",
-      "git log",
-      "git diff",
-      "pytest",
-      "python -m pytest",
-      "ruff check"
+      {"command": "dir", "flags": ["/b"]},
+      {"command": "ls", "flags": ["-l", "-a", "-la", "-1"]},
+      {"command": "type"},
+      {"command": "cat"},
+      {"command": "git status", "flags": ["-s", "-b", "-sb"]},
+      {
+        "command": "git log",
+        "flags": ["--stat", "--name-only", "--cached", "-n", "--oneline"]
+      },
+      {
+        "command": "git diff",
+        "flags": ["--stat", "--name-only", "--cached", "-n", "--oneline"]
+      }
     ],
     "command_timeout_s": 30,
     "max_output_chars": 30000
