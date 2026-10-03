@@ -132,6 +132,24 @@ La sicurezza è **difensiva in profondità**, non un sandbox:
 - **`cwd` forzato alla prima root non è un jail**: con `shell=True` un comando
   approvato può raggiungere il filesystem con i permessi dell'utente.
 
+## Codifica (Windows, pipe e non-TTY)
+
+All'avvio la CLI forza UTF-8 su `stdout`, `stderr` e `stdin` con
+`errors="replace"` (funzione `agent.cli.force_utf8_stdio`):
+
+- **TTY Windows**: l'I/O della console è già Unicode nativo (PEP 528) e la
+  forzatura non cambia nulla.
+- **Pipe/redirect** (`python -m agent > out.txt`, pipe verso un altro tool):
+  senza la forza, l'encoding seguirebbe la code page di sistema (cp1252 su
+  it-IT) e i caratteri fuori range darebbero `UnicodeEncodeError`. Con la
+  forza, **l'output è UTF-8**: un lettore che dichiari UTF-8 lo legge bene, uno
+  che assuma la code page di sistema vedrebbe i byte interpretati male
+  (dichiarare UTF-8 lato lettore).
+- **`errors="replace"`**: un carattere non codificabile diventa `�` invece
+  di abbattere la CLI.
+- I processi figli ereditano `PYTHONUTF8=1`: anche gli interpreter figli
+  avviano in UTF-8 mode (le variabili valgono solo all'avvio del figlio).
+
 ## Configurazione (`config.json`)
 
 | Sezione | Chiave | Significato |

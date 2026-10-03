@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from typing import Any
 
@@ -106,6 +107,34 @@ def handle_repl_command(
         return f"Cronologia caricata: {path} ({len(loaded)} messaggi + system)"
 
     return None
+
+
+def force_utf8_stdio() -> None:
+    """Forza UTF-8 sugli std stream del processo corrente (1.6.5).
+
+    - TTY Windows: già Unicode nativo (PEP 528), la riconfigurazione non nuoce;
+    - pipe/redirect (non-TTY): senza forza l'encoding seguirebbe la code page
+      di sistema (cp1252 su it-IT) e i caratteri fuori range darebbero
+      UnicodeEncodeError;
+    - `errors="replace"`: un carattere non codificabile diventa ``\ufffd``
+      invece di far cadere la CLI (nessuna eccezione I/O deve abbatterla);
+    - `PYTHONUTF8=1` ereditato dai processi figli (il valore ha effetto solo
+      all'avvio di un nuovo interprete, quindi vale per i figli, non per noi).
+
+    Qualsiasi stream senza `reconfigure` (catturati da pytest, binari, chiusi)
+    viene ignorato: la codifica resta quella che c'è.
+    """
+    os.environ.setdefault("PYTHONUTF8", "1")
+    for stream in (sys.stdout, sys.stderr, sys.stdin):
+        # gli stream tipizzati TextIO possono non avere reconfigure (pytest,
+        # catture, binari): getattr + try copre sia i tipi che il runtime
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass  # commentato sopra: mai far cadere la CLI qui dentro
 
 
 def build_client(cfg: AgentConfig, provider: str | None) -> LLMClient:
@@ -269,6 +298,7 @@ def _run_demo(llm: LLMClient, registry: ToolRegistry, config: AgentConfig, conso
 
 
 def main(argv: list[str] | None = None) -> int:
+    force_utf8_stdio()  # 1.6.5: prima di qualunque stampa
     parser = argparse.ArgumentParser(
         prog="agent", description="AI Agent locale: ReAct + tool + Human-in-the-Loop"
     )
