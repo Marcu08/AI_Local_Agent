@@ -235,3 +235,16 @@ def test_requires_python_sotto_o_uguale_3_11() -> None:
     min_version = requires.replace(">=", "").split(",")[0].strip()
     parts = tuple(int(p) for p in min_version.split("."))
     assert parts <= (3, 11), f"requires-python alzato oltre 3.11: {requires!r}"
+
+
+def test_config_json_reale_dichiara_limiti_storico() -> None:
+    """Il config.json spedito rende espliciti history_max_messages/chars (1.5.7).
+
+    Solo lettura grezza delle chiavi: path derivato da __file__ (portabile),
+    nessun caricamento validato né creazione di workspace.
+    """
+    root = Path(__file__).resolve().parent.parent
+    data = json.loads((root / "config.json").read_text(encoding="utf-8"))
+    agent = data["agent"]
+    assert agent["history_max_messages"] == 40
+    assert agent["history_max_chars"] == 50000

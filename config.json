@@ -41,6 +41,8 @@
   },
   "agent": {
     "max_iterations": 15,
-    "max_tool_output_chars": 20000
+    "max_tool_output_chars": 20000,
+    "history_max_messages": 40,
+    "history_max_chars": 50000
   }
 }
