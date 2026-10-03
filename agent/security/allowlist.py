@@ -11,7 +11,15 @@ Un comando è auto-approvabile SOLO se:
   a una voce di ``security.command_allowlist`` (case-insensitive, senza .exe);
 - ogni flag è tra quelli ammessi dalla voce corrispondente;
 - nessun argomento è un path assoluto e ogni argomento-path, risolto con
-  ``resolve()`` (symlink/junction compresi), resta dentro le workspace_root.
+  ``resolve()`` (symlink/junction compresi), resta dentro le workspace_root;
+- per ``cat``/``type``, l'argomento che risolve su un file sensibile (``.env``,
+  ``*.pem``, ``id_rsa*``, ``*.key``, ``.git/config``) richiede SEMPRE la
+  conferma, anche dentro le root (1.6.0).
+
+Per i comandi git auto-approvati il TOOL riscrive il comando con
+``harden_auto_git_command`` aggiungendo ``-c core.fsmonitor=false``,
+``-c core.pager=cat`` e (dove accettati) ``--no-ext-diff --no-textconv``:
+sono il tool a inserirli, mai il modello (1.6.0).
 
 Tutto il resto richiede la conferma umana (default NO). Questa funzione riduce
 la superficie: NON è un confine di sicurezza (vedi README "Limiti noti").
@@ -24,6 +32,7 @@ import re
 import shlex
 from collections.abc import Sequence
 from dataclasses import dataclass
+from fnmatch import fnmatchcase
 from pathlib import Path
 
 from agent.security.paths import resolves_outside_roots
@@ -42,6 +51,63 @@ class AllowlistEntry:
 
     command: str
     flags: tuple[str, ...] = ()
+
+
+# cat/type leggono il contenuto: sui file riservati la conferma è obbligatoria
+_CONFIRM_SENSITIVE_COMMANDS = frozenset({"cat", "type"})
+_SENSITIVE_PATTERNS = ("*.pem", "*.key", "id_rsa*")
+
+# opzioni git inserite dal TOOL (mai dal modello) sui comandi auto-approvati
+_GIT_SAFE_GLOBALS = ("-c", "core.fsmonitor=false", "-c", "core.pager=cat")
+# sotto-comandi che accettano --no-ext-diff/--no-textconv
+# (git status NO: li rifiuta con exit 129 "unknown option")
+_GIT_DIFF_SUBCOMMANDS = frozenset({"diff", "log"})
+
+
+def _is_sensitive_target(path: Path) -> bool:
+    """True se il path risolto punta a un file sensibile (contenuto riservato)."""
+    name = path.name.lower()
+    if name == ".env" or name.startswith(".env."):
+        return True
+    # .git/config (e sotto-file omonimi) in qualunque root o sottocartella
+    if name == "config" and any(part.lower() == ".git" for part in path.parts[:-1]):
+        return True
+    return any(fnmatchcase(name, pattern) for pattern in _SENSITIVE_PATTERNS)
+
+
+def _resolve_target(arg: str, roots: Sequence[Path]) -> Path | None:
+    """Path risolto rispetto alla prima root (il cwd forzato); None se fallisce."""
+    if not roots:
+        return None
+    try:
+        p = Path(arg).expanduser()
+        if not p.is_absolute():
+            p = Path(roots[0]) / p
+        return p.resolve()
+    except (OSError, RuntimeError, ValueError):
+        return None
+
+
+def harden_auto_git_command(command: str) -> str:
+    """Riscrive un comando git auto-approvato con le opzioni di sicurezza.
+
+    Inserisce subito dopo ``git``: ``-c core.fsmonitor=false`` (disattiva
+    l'hook fsmonitor, eseguibile dal repo) e ``-c core.pager=cat`` (nessun
+    pager esterno); appende ``--no-ext-diff --no-textconv`` ai sotto-comandi
+    che li accettano (diff/log). Le opzioni le aggiunge IL TOOL: il modello
+    non le chiede e non può ometterle. Comandi non-git: invariati.
+    """
+    try:
+        raw_tokens = shlex.split(command, posix=False)
+    except ValueError:
+        return command
+    if not raw_tokens or _normalize_exe(raw_tokens[0]) != "git":
+        return command
+    extra: list[str] = []
+    if len(raw_tokens) > 1 and _normalize_exe(raw_tokens[1]) in _GIT_DIFF_SUBCOMMANDS:
+        extra = ["--no-ext-diff", "--no-textconv"]
+    # i token grezzi conservano le virgolette: argomenti con spazi restano intatti
+    return " ".join([raw_tokens[0], *_GIT_SAFE_GLOBALS, *raw_tokens[1:], *extra])
 
 
 def _flag_name(token: str) -> str | None:
@@ -152,4 +218,12 @@ def autoapprove_reason(
             return f"argomento non risolvibile ({arg})"
         if outside:
             return f"argomento che esce dalle workspace_root ({arg})"
+        # 1.6.0: cat/type su file sensibile → SEMPRE conferma, anche in root.
+        # Il check è sul path RISOLTO: un symlink dal nome innocuo scopre .env.
+        if matched.command.lower() in _CONFIRM_SENSITIVE_COMMANDS:
+            target = _resolve_target(arg, roots)
+            if target is None:
+                return f"argomento non risolvibile ({arg})"
+            if _is_sensitive_target(target):
+                return f"file sensibile ({arg}): richiede la conferma"
     return None

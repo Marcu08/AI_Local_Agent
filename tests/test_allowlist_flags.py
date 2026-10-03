@@ -190,3 +190,109 @@ def test_dotdot_fuori_root_forza_conferma(config, workspace, calls, fake_run) ->
     _action, detail = confirm.calls[0]
     assert "esce dalle workspace_root" in detail
     assert calls == []
+
+
+# --- 1.6.0: cat/type su file sensibili → SEMPRE conferma ----------------------
+_SENSITIVE_CASES: list[str] = [
+    "cat .env",
+    "cat .env.local",
+    "cat sub/.env",
+    "cat cert.pem",
+    "cat id_rsa",
+    "cat id_rsa.pub",
+    "cat server.key",
+    "cat .git/config",
+    "type .env",
+    "type server.key",
+]
+
+
+@pytest.mark.parametrize("command", _SENSITIVE_CASES, ids=_ids(_SENSITIVE_CASES))
+def test_cat_type_file_sensibile_forza_conferma(
+    config, workspace, calls, fake_run, command
+) -> None:
+    """File sensibile dentro la root: la lettura cade sempre sulla conferma."""
+    result, confirm = _dispatch(config, command, approve=False)
+    assert len(confirm.calls) == 1, f"attesa conferma per: {command}"
+    _action, detail = confirm.calls[0]
+    assert "file sensibile" in detail, detail
+    assert calls == []
+
+
+def test_cat_file_normale_rest_auto(config, workspace, calls, fake_run) -> None:
+    """Il controllo non divampa: un file ordinario nella root resta auto."""
+    result, confirm = _dispatch(config, "cat notes.md", approve=True)
+    assert result.ok, result.error
+    assert confirm.calls == []
+    assert len(calls) == 1
+
+
+def test_symlink_dal_nome_innocuo_verso_env_forza_conferma(
+    config, workspace, calls, fake_run
+) -> None:
+    """Il check è sul path risolto: un link chiamato hint.txt che punta a .env
+    viene scoperto, mentre un link verso un file ordinario no."""
+    env_target = workspace / ".env"
+    env_target.write_text("CHIAVE=segreta\n", encoding="utf-8")
+    link = workspace / "hint.txt"
+    _symlink_or_skip(link, env_target)
+    result, confirm = _dispatch(config, "cat hint.txt", approve=False)
+    assert len(confirm.calls) == 1
+    _action, detail = confirm.calls[0]
+    assert "file sensibile" in detail
+    assert calls == []
+
+
+# --- 1.6.0: opzioni git di sicurezza aggiunte dal TOOL ------------------------
+def test_git_diff_auto_eseguito_con_opzioni_difesa(
+    config, workspace, calls, fake_run
+) -> None:
+    """git diff auto: -c core.fsmonitor=false -c core.pager=cat + --no-ext-diff
+    --no-textconv, tutti inseriti dal tool (il modello non li chiede)."""
+    result, confirm = _dispatch(config, "git diff --stat", approve=True)
+    assert result.ok, result.error
+    assert confirm.calls == []
+    assert len(calls) == 1
+    cmd = calls[0]["cmd"]
+    assert cmd.startswith("git -c core.fsmonitor=false -c core.pager=cat ")
+    assert cmd.endswith(" diff --stat --no-ext-diff --no-textconv")
+
+
+def test_git_log_auto_stesse_opzioni(config, workspace, calls, fake_run) -> None:
+    """Stesse opzioni difesa su git log (sotto-comando che le accetta)."""
+    result, confirm = _dispatch(config, "git log --oneline -n 3", approve=True)
+    assert result.ok, result.error
+    assert confirm.calls == []
+    cmd = calls[0]["cmd"]
+    assert cmd.startswith("git -c core.fsmonitor=false -c core.pager=cat ")
+    assert cmd.endswith(" log --oneline -n 3 --no-ext-diff --no-textconv")
+
+
+def test_git_status_auto_solo_opzioni_globali(config, workspace, calls, fake_run) -> None:
+    """git status NON accetta --no-ext-diff/--no-textconv (exit 129):
+    il tool aggiunge solo le opzioni globali e non rompe il comando."""
+    result, confirm = _dispatch(config, "git status -s", approve=True)
+    assert result.ok, result.error
+    assert confirm.calls == []
+    cmd = calls[0]["cmd"]
+    assert cmd.startswith("git -c core.fsmonitor=false -c core.pager=cat ")
+    assert "--no-ext-diff" not in cmd and "--no-textconv" not in cmd
+
+
+def test_git_confermato_dall_utente_non_riscritto(
+    config, workspace, calls, fake_run
+) -> None:
+    """La riscrittura vale per il path auto: un comando approvato dall'utente
+    viene eseguito esattamente come mostrato nella conferma."""
+    result, confirm = _dispatch(config, "git diff --ext-diff", approve=True)
+    assert result.ok, result.error
+    assert len(confirm.calls) == 1
+    assert calls[0]["cmd"] == "git diff --ext-diff"
+
+
+def test_comando_non_git_non_riscritto(config, workspace, calls, fake_run) -> None:
+    """Solo git viene riscritto: gli altri comandi auto partono invariati."""
+    result, confirm = _dispatch(config, "ls -la", approve=True)
+    assert result.ok, result.error
+    assert confirm.calls == []
+    assert calls[0]["cmd"] == "ls -la"

@@ -5,7 +5,7 @@ from __future__ import annotations
 import subprocess
 from typing import Any
 
-from agent.security.allowlist import autoapprove_reason
+from agent.security.allowlist import autoapprove_reason, harden_auto_git_command
 from agent.security.blacklist import find_destructive_match, find_path_based_block
 from agent.tools.base import ToolContext, ToolResult, clip
 
@@ -56,6 +56,10 @@ def run_command(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
                     decision="rifiutato",
                 )
             decision = "confermato"
+        else:
+            # 1.6.0: sui git auto-approvati le opzioni di sicurezza le aggiunge
+            # il TOOL (fsmonitor/pager/ext-diff/textconv), non il modello.
+            command = harden_auto_git_command(command)
 
     timeout = ctx.config.security.command_timeout_s
     try:
