@@ -205,7 +205,11 @@ def run_turn(
     tools = registry.to_schemas()
 
     for _iteration in range(config.max_iterations):
-        response: LLMResponse = llm.chat(history, tools)
+        # 1.6.3: i delta del modello diventano eventi "delta" in tempo reale;
+        # i client non-stream (MockClient) semplicemente non li producono.
+        response: LLMResponse = llm.chat(
+            history, tools, on_delta=lambda chunk: emit("delta", chunk)
+        )
 
         if not response.has_tool_calls:
             final = response.text or ""

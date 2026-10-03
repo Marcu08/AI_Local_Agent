@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from copy import deepcopy
 from typing import Any
 
@@ -27,7 +27,10 @@ class MockClient:
         self,
         messages: list[dict[str, Any]],
         tools: Sequence[dict[str, Any]] | None = None,
+        on_delta: Callable[[str], None] | None = None,
     ) -> LLMResponse:
+        """Fallback non-stream (1.6.3): `on_delta` è ignorato di proposito."""
+        del on_delta  # i test girano senza streaming
         self.received.append(
             {"messages": deepcopy(messages), "tools": deepcopy(list(tools)) if tools else None}
         )

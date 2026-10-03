@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -33,11 +33,17 @@ class LLMResponse:
 
 
 class LLMClient(Protocol):
-    """Interfaccia minima: una chiamata chat con optional tool schemas."""
+    """Interfaccia minima: una chiamata chat con optional tool schemas.
+
+    `on_delta` (1.6.3) riceve ogni frammento di testo man mano che il modello
+    lo genera: i client a streaming lo invocano, gli altri lo ignorano
+    (fallback non-stream, usato dai test).
+    """
 
     def chat(
         self,
         messages: list[dict[str, Any]],
         tools: Sequence[dict[str, Any]] | None = None,
+        on_delta: Callable[[str], None] | None = None,
     ) -> LLMResponse:
         ...

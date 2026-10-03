@@ -50,19 +50,43 @@ def build_client(cfg: AgentConfig, provider: str | None) -> LLMClient:
 
 
 def make_on_event(console: Console):
-    """Rendering delle fasi ReAct: Act/Observation sempre, Thought se presente."""
+    """Rendering delle fasi ReAct: Act/Observation sempre, Thought se presente.
+
+    1.6.3: se il client produce eventi "delta", il testo scorre in tempo reale
+    e thought/final successivi NON vengono ridisegnati (nessun duplicato).
+    Senza delta (MockClient o provider non-stream) il rendering è identico a
+    quello di prima.
+    """
+    state = {"streaming": False, "streamed": False}
 
     def on_event(kind: str, payload: str) -> None:
+        if kind == "delta":
+            if not state["streaming"]:
+                state["streaming"] = True
+                state["streamed"] = True
+            console.print(
+                payload, end="", markup=False, highlight=False, soft_wrap=True
+            )
+            return
+        if state["streaming"]:
+            console.print()  # chiudi la riga aperta dallo streaming
+            state["streaming"] = False
         text = payload
         if len(text) > _MAX_EVENT_CHARS:
             text = text[:_MAX_EVENT_CHARS] + "\n... [evento troncato]"
         if kind == "thought":
+            if state["streamed"]:
+                state["streamed"] = False  # già mostrato in streaming
+                return
             console.print(Panel(text, title="Thought", border_style="dim"))
         elif kind == "act":
             console.print(f"[bold cyan]Act:[/] {text}")
         elif kind == "observation":
             console.print(f"[green]Observation:[/] {text}")
         elif kind == "final":
+            if state["streamed"]:
+                state["streamed"] = False  # già mostrato in streaming
+                return
             console.print(Panel(text, title="Risposta", border_style="blue"))
         elif kind == "limit":
             console.print(f"[red]{text}[/]")

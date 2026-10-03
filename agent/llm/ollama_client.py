@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Any
 
 from agent.config import LLMConfig
@@ -10,7 +10,12 @@ from agent.llm.base import LLMError, LLMResponse, ToolCall
 
 
 class OllamaClient:
-    """Wrapper sottile del client ufficiale Ollama (streaming disattivato)."""
+    """Wrapper sottile del client ufficiale Ollama.
+
+    Con `on_delta` (1.6.3) passa a `stream=True` e consegna ogni frammento di
+    testo al chiamante mentre arriva; senza `on_delta` resta non-stream
+    (fallback usato dai test e dai client senza rendering live).
+    """
 
     def __init__(self, cfg: LLMConfig) -> None:
         try:
@@ -24,23 +29,26 @@ class OllamaClient:
         self,
         messages: list[dict[str, Any]],
         tools: Sequence[dict[str, Any]] | None = None,
+        on_delta: Callable[[str], None] | None = None,
     ) -> LLMResponse:
         kwargs: dict[str, Any] = {
             "model": self._cfg.model,
             "messages": messages,
-            "stream": False,
+            "stream": on_delta is not None,
             "options": {"num_predict": self._cfg.num_predict},
         }
         if tools:
             kwargs["tools"] = list(tools)
         try:
             raw = self._client.chat(**kwargs)
+            if on_delta is None:
+                return _parse_response(raw)
+            return _accumulate_stream(raw, on_delta)
         except Exception as e:
             raise LLMError(
                 f"chiamata Ollama fallita ({self._cfg.base_url}, modello "
                 f"{self._cfg.model!r}): {e}"
             ) from e
-        return _parse_response(raw)
 
 
 def _field(obj: Any, key: str, default: Any = None) -> Any:
@@ -59,12 +67,10 @@ def _field(obj: Any, key: str, default: Any = None) -> Any:
     return default if value is None else value
 
 
-def _parse_response(raw: Any) -> LLMResponse:
-    """Normalizza la risposta Ollama in LLMResponse (dict o pydantic)."""
-    message = _field(raw, "message", {})
-    content = _field(message, "content") or None
+def _parse_tool_calls(items: Any) -> list[ToolCall]:
+    """Normalizza `tool_calls` Ollama (dict o pydantic) in ToolCall."""
     calls: list[ToolCall] = []
-    for item in _field(message, "tool_calls", []) or []:
+    for item in items or []:
         function = _field(item, "function", {}) or {}
         name = _field(function, "name")
         if not name:
@@ -73,4 +79,30 @@ def _parse_response(raw: Any) -> LLMResponse:
         if not isinstance(arguments, dict):
             arguments = {}
         calls.append(ToolCall(name=str(name), arguments=arguments))
+    return calls
+
+
+def _parse_response(raw: Any) -> LLMResponse:
+    """Normalizza la risposta Ollama in LLMResponse (dict o pydantic)."""
+    message = _field(raw, "message", {})
+    content = _field(message, "content") or None
+    calls = _parse_tool_calls(_field(message, "tool_calls", []))
     return LLMResponse(text=content, tool_calls=calls, raw=raw)
+
+
+def _accumulate_stream(raw: Any, on_delta: Callable[[str], None]) -> LLMResponse:
+    """Accumula lo stream: ogni contenuto va in `on_delta`, le tool call sono
+    prese dall'ultimo chunk che le contiene (Ollama le manda complete)."""
+    parts: list[str] = []
+    calls: list[ToolCall] = []
+    for chunk in raw:
+        message = _field(chunk, "message", {})
+        content = _field(message, "content") or ""
+        if content:
+            parts.append(content)
+            on_delta(content)
+        chunk_calls = _field(message, "tool_calls", None)
+        if chunk_calls:
+            calls = _parse_tool_calls(chunk_calls)
+    text = "".join(parts)
+    return LLMResponse(text=text or None, tool_calls=calls)
