@@ -1,0 +1,30 @@
+{
+  "workspace_roots": ["C:/Users/marzu/OneDrive/Desktop"],
+  "llm": {
+    "provider": "ollama",
+    "model": "llama3.1:8b",
+    "base_url": "http://localhost:11434",
+    "timeout_s": 120
+  },
+  "security": {
+    "require_write_confirmation": true,
+    "require_command_confirmation": true,
+    "command_blacklist": [
+      "rm -rf",
+      "rm -fr",
+      "rmdir /s",
+      "del /f",
+      "format ",
+      "mkfs",
+      "dd if=",
+      "shutdown",
+      "Remove-Item -Recurse -Force"
+    ],
+    "command_timeout_s": 30,
+    "max_output_chars": 30000
+  },
+  "agent": {
+    "max_iterations": 15,
+    "max_tool_output_chars": 20000
+  }
+}
