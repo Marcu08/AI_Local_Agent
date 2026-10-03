@@ -29,6 +29,7 @@ class OllamaClient:
             "model": self._cfg.model,
             "messages": messages,
             "stream": False,
+            "options": {"num_predict": self._cfg.num_predict},
         }
         if tools:
             kwargs["tools"] = list(tools)
@@ -42,17 +43,33 @@ class OllamaClient:
         return _parse_response(raw)
 
 
+def _field(obj: Any, key: str, default: Any = None) -> Any:
+    """Legge un campo da dict (formato legacy) o da oggetto (pydantic ollama>=0.6)."""
+    if obj is None:
+        return default
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    getter = getattr(obj, "get", None)
+    if callable(getter):
+        try:
+            return getter(key, default)
+        except TypeError:
+            pass
+    value = getattr(obj, key, None)
+    return default if value is None else value
+
+
 def _parse_response(raw: Any) -> LLMResponse:
-    """Normalizza la risposta Ollama in LLMResponse."""
-    message = raw.get("message", {}) if isinstance(raw, dict) else {}
-    content = message.get("content") or None
+    """Normalizza la risposta Ollama in LLMResponse (dict o pydantic)."""
+    message = _field(raw, "message", {})
+    content = _field(message, "content") or None
     calls: list[ToolCall] = []
-    for item in message.get("tool_calls") or []:
-        function = item.get("function") or {}
-        name = function.get("name")
+    for item in _field(message, "tool_calls", []) or []:
+        function = _field(item, "function", {}) or {}
+        name = _field(function, "name")
         if not name:
             continue
-        arguments = function.get("arguments") or {}
+        arguments = _field(function, "arguments") or {}
         if not isinstance(arguments, dict):
             arguments = {}
         calls.append(ToolCall(name=str(name), arguments=arguments))

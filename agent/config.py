@@ -31,6 +31,9 @@ class LLMConfig:
     model: str = "llama3.1:8b"
     base_url: str = "http://localhost:11434"
     timeout_s: float = 120.0
+    # massimo numero di token generati per chiamata: protegge da runaway
+    # generazionale (possibile con modelli piccoli) che causerebbe timeout
+    num_predict: int = 1024
 
 
 @dataclass(frozen=True)
@@ -114,6 +117,7 @@ def load_config(path: str | Path | None = None) -> AgentConfig:
         model=str(llm_raw.get("model", "llama3.1:8b")),
         base_url=str(llm_raw.get("base_url", "http://localhost:11434")),
         timeout_s=_as_float(llm_raw.get("timeout_s"), 120.0, "llm.timeout_s"),
+        num_predict=_as_int(llm_raw.get("num_predict"), 1024, "llm.num_predict"),
     )
 
     sec_raw = raw.get("security", {})

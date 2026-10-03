@@ -28,9 +28,24 @@ def test_load_config_valido(tmp_path: Path) -> None:
     loaded = load_config(cfg)
     assert loaded.workspace_roots == (tmp_path.resolve(),)
     assert loaded.llm.model == "llama3.1:8b"
+    assert loaded.llm.num_predict == 1024  # default anti-runaway
     assert loaded.max_iterations == 7
     assert loaded.security.command_blacklist == ("killall",)
     assert loaded.security.require_write_confirmation is True
+
+
+def test_num_predict_configurabile(tmp_path: Path) -> None:
+    cfg = _write_cfg(
+        tmp_path / "config.json",
+        {"workspace_roots": [str(tmp_path)], "llm": {"num_predict": 2048}},
+    )
+    assert load_config(cfg).llm.num_predict == 2048
+    cfg2 = _write_cfg(
+        tmp_path / "config.json",
+        {"workspace_roots": [str(tmp_path)], "llm": {"num_predict": 0}},
+    )
+    with pytest.raises(ConfigError, match="num_predict"):
+        load_config(cfg2)
 
 
 def test_load_config_eseguibile_del_progetto() -> None:

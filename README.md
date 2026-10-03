@@ -87,6 +87,7 @@ modello che "impazzisce" non può bypassarle.
 |---|---|---|
 | top | `workspace_roots` | cartelle che l'agente può esplorare |
 | `llm` | `provider`, `model`, `base_url` | provider: `ollama` \| `mock` |
+| `llm` | `num_predict` | max token generati per chiamata (default 1024, anti-runaway) |
 | `security` | `require_write_confirmation` | conferma y/N per gli scritture (default true) |
 | `security` | `require_command_confirmation` | conferma y/N per i comandi (default true) |
 | `security` | `command_blacklist` | stringhe/voci extra da bloccare |
