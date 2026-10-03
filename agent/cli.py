@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from typing import Any
 
@@ -25,8 +26,86 @@ _HELP = """\
 Comandi:  /help  mostra questo aiuto
           /tools elenca i tool disponibili
           /config mostra la configurazione
+          /reset azzera la cronologia della conversazione
+          /save <nome>  salva la conversazione nella workspace (JSON)
+          /load <nome>  ricarica una conversazione salvata
           /quit  esci
 Inoltra qualsiasi altra riga all'agente."""
+
+
+def _conversation_filename(name: str) -> tuple[str | None, str | None]:
+    """Nome file di una conversazione: semplice e senza separatori.
+
+    Ritorna (filename, None) se valido, altrimenti (None, errore).
+    Niente path: il file vive sempre nella prima workspace_root (1.6.4).
+    """
+    if not name or name != name.strip():
+        return None, "nome non valido: niente spazi ai bordi"
+    if any(ch in name for ch in '/\\:*?"<>|'):
+        return None, 'nome non valido: niente separatori o caratteri proibiti'
+    if name in {".", ".."} or name.startswith("..") or name.endswith("."):
+        return None, "nome non valido"
+    if len(name) > 200:
+        return None, "nome troppo lungo (max 200 caratteri)"
+    return (name if name.endswith(".json") else name + ".json"), None
+
+
+def handle_repl_command(
+    line: str, history: list[dict[str, Any]], config: AgentConfig
+) -> str | None:
+    """Gestisce /reset, /save e /load; None = non è un comando REPL gestito.
+
+    I file di conversazione stanno nella PRIMA workspace_root, come nome file
+    semplice (nessun path, vedi _conversation_filename). /load sostituisce la
+    cronologia ma riusa SEMPRE il system prompt corrente.
+    """
+    parts = line.split(maxsplit=1)
+    cmd = parts[0]
+    arg = parts[1].strip() if len(parts) > 1 else ""
+
+    if cmd == "/reset":
+        history.clear()
+        history.extend(_new_history())
+        return "Cronologia azzerata."
+
+    if cmd in {"/save", "/load"}:
+        if not arg:
+            return f"Uso: {cmd} <nome>"
+        filename, error = _conversation_filename(arg)
+        if filename is None:
+            return f"{cmd} rifiutato: {error or 'nome non valido'}"
+        path = config.workspace_roots[0] / filename
+
+        if cmd == "/save":
+            try:
+                path.write_text(
+                    json.dumps(history, ensure_ascii=False, indent=2), encoding="utf-8"
+                )
+            except OSError as e:
+                return f"Salvataggio fallito: {e}"
+            return f"Cronologia salvata: {path} ({len(history)} messaggi)"
+
+        # /load
+        if not path.exists():
+            return f"Caricamento fallito: file inesistente ({path})"
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as e:
+            return f"Caricamento fallito: JSON non valido ({e})"
+        if not isinstance(data, list) or not all(isinstance(m, dict) for m in data):
+            return "Caricamento fallito: struttura non valida (atteso un elenco di messaggi)"
+        loaded = [
+            m
+            for m in data
+            if m.get("role") in {"user", "assistant", "tool"}
+            and isinstance(m.get("content"), (str, type(None)))
+        ]
+        history.clear()
+        history.extend(_new_history())  # il system prompt è quello corrente
+        history.extend(loaded)
+        return f"Cronologia caricata: {path} ({len(loaded)} messaggi + system)"
+
+    return None
 
 
 def build_client(cfg: AgentConfig, provider: str | None) -> LLMClient:
@@ -146,6 +225,10 @@ def _run(llm: LLMClient, registry: ToolRegistry, config: AgentConfig, console: C
             continue
         if user_input == "/config":
             _print_config(console, config)
+            continue
+        repl_msg = handle_repl_command(user_input, history, config)
+        if repl_msg is not None:
+            console.print(repl_msg)
             continue
         try:
             run_turn(
