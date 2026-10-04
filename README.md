@@ -178,6 +178,18 @@ All'avvio la CLI forza UTF-8 su `stdout`, `stderr` e `stdin` con
 I test usano fixture sintetiche su `tmp_path` e mock iniettabili: mai `input()`
 reale, mai server vivi (convenzione dei progetti JARVIS/BAULI).
 
+Gli **scenari e2e** (`tests/e2e/`, Fase 1.7) sono l'unica eccezione: usano un
+modello reale, sono marcati `e2e` ed **esclusi di default**. Si eseguono solo
+con Ollama già in esecuzione (nessun modello viene scaricato da qui):
+
+```bash
+# 8 scenari x 3 con un modello scelto via CLI o env AGENT_E2E_MODELS
+.venv\Scripts\python -m pytest -m e2e --e2e-models llama3.1:8b
+
+# 3 giri per modello → docs/EVAL.md (tabella modello x scenario x successi/3)
+.venv\Scripts\python scripts\run_eval.py --models llama3.1:8b,qwen2.5:7b
+```
+
 ## Roadmap
 
 - **Fase 2 — Memoria RAG**: ingestion reale (`scripts/ingest.py` è uno scaffold

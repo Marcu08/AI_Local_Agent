@@ -2,12 +2,33 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
 
 from agent.config import AgentConfig
 from agent.security.confirm import ScriptedConfirm
+
+
+def pytest_addoption(parser: pytest.Parser) -> None:
+    """Opzioni della Fase 1.7 (scenari e2e): modello e report JSONL.
+
+    I valori di default arrivano da variabile d'ambiente, così lo script
+    scripts/run_eval.py e un utente manuale possono entrambi usarle.
+    """
+    parser.addoption(
+        "--e2e-models",
+        action="store",
+        default=os.environ.get("AGENT_E2E_MODELS", ""),
+        help="modelli e2e separati da virgola (o env AGENT_E2E_MODELS)",
+    )
+    parser.addoption(
+        "--e2e-json",
+        action="store",
+        default=os.environ.get("AGENT_E2E_JSON", ""),
+        help="file JSONL per esiti/tempi degli scenari e2e (o env AGENT_E2E_JSON)",
+    )
 
 
 @pytest.fixture
