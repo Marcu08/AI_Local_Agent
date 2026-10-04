@@ -96,6 +96,19 @@ def _print_output_tail(output: str, returncode: int | None) -> None:
     print(f"   | returncode: {rc_text}")
 
 
+def _print_interpreter_error(returncode: int | None, output: str) -> None:
+    """Messaggio chiaro: pytest non eseguibile con l'interprete corrente."""
+    rc_text = str(returncode) if returncode is not None else "(timeout: nessuno)"
+    first_line = next((ln for ln in output.splitlines() if ln.strip()), "(nessun output)")
+    print(
+        f"ERRORE: pytest non eseguibile con l'interprete corrente "
+        f"(returncode={rc_text}): {first_line.strip()[:200]}\n"
+        "Rilancia lo script con l'interprete della venv:\n"
+        "    .venv\\Scripts\\python scripts\\run_eval.py",
+        file=sys.stderr,
+    )
+
+
 def load_records(jsonl: Path) -> list[dict]:
     if not jsonl.exists():
         return []
@@ -226,17 +239,20 @@ def main(argv: list[str] | None = None) -> int:
             print(f"== {model}: {args.runs} run ==")
             last_output = ""
             for i in range(args.runs):
-                last_output = run_pytest(model, jsonl, args.base_url, args.timeout)
-                tail = [
-                    ln for ln in last_output.splitlines() if ln.strip()
-                ]
-                summary = next(
-                    (ln for ln in reversed(tail) if any(
-                        w in ln for w in ("passed", "skipped", "failed", "error")
-                    )),
-                    "(nessun riepilogo)",
-                )
-                print(f"   run {i + 1}/{args.runs}: {summary.strip()}")
+                returncode, last_output = run_pytest(model, jsonl, args.base_url, args.timeout)
+                summary = _summary_line(last_output)
+                if summary is None:
+                    # diagnostici: ultime righe + returncode del subprocess
+                    _print_output_tail(last_output, returncode)
+                # pytest morto con l'interprete sbagliato: niente mezzo report,
+                # termina subito col suggerimento della venv (codice 3)
+                if returncode is not None and returncode not in _PYTEST_OK_CODES:
+                    _print_interpreter_error(returncode, last_output)
+                    return 3
+                if "No module named" in last_output:
+                    _print_interpreter_error(returncode, last_output)
+                    return 3
+                print(f"   run {i + 1}/{args.runs}: {(summary or '(nessun riepilogo)').strip()}")
             outputs[model] = last_output
             all_records.extend(load_records(jsonl))
 
