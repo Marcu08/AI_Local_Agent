@@ -77,11 +77,53 @@ def _concise_error(report: Any) -> str:
     return report.longreprtext[-600:]
 
 
+class ScenarioRecorder:
+    """Registra scenario (chiamata) e fatti aggiuntivi (1.7b, metodo `note`).
+
+    I fatti passati a `note` finiscono nel record JSONL accanto a ok/seconds:
+    servono a separare, in fase di diagnosi, il controllo sugli atti (gli assert
+    del test) da ciò che è effettivamente arrivato nella risposta finale.
+    """
+
+    def __init__(self, state: dict[str, Any]) -> None:
+        self._state = state
+
+    def __call__(self, scenario: str) -> None:
+        self._state["scenario"] = scenario
+
+    def note(self, key: str, value: Any) -> None:
+        """Annota un fatto sullo scenario corrente (es. contenuto in finale)."""
+        self._state[key] = value
+
+
+def _build_entry(
+    state: dict[str, Any], model: str, seconds: float, report: Any
+) -> dict[str, Any]:
+    """Riga JSONL dello scenario: esito, tempi e i fatti annotati con .note().
+
+    I fatti (es. `final_content`: il contenuto atteso compare nella risposta
+    finale) restano CHI separati dall'esito complessivo in `ok`: così un record
+    fallito dice anche se il modello ha almeno riportato il contenuto.
+    """
+    entry: dict[str, Any] = {
+        "model": model,
+        "scenario": str(state.get("scenario")),
+        "ok": bool(report is not None and report.passed),
+        "seconds": round(seconds, 2),
+    }
+    for key, value in state.items():
+        if key != "scenario":
+            entry[key] = value
+    if report is not None and report.failed:
+        entry["error"] = _concise_error(report)
+    return entry
+
+
 @pytest.fixture
 def e2e_record(
     model: str, request: pytest.FixtureRequest
-) -> Iterator[Callable[[str], None]]:
-    """Registra esito/tempi dello scenario corrente su --e2e-json (JSONL).
+) -> Iterator[ScenarioRecorder]:
+    """Registra esito/tempi/fatti dello scenario corrente su --e2e-json (JSONL).
 
     Il record viene scritto nel teardown (dopo la fase call), quindi `ok` è
     l'esito reale del test; se il test è saltato al setup non si scrive nulla.
@@ -89,24 +131,15 @@ def e2e_record(
     config_path = request.config.getoption("--e2e-json") or ""
     started = time.perf_counter()
     state: dict[str, Any] = {"scenario": None}
+    recorder = ScenarioRecorder(state)
 
-    def begin(scenario: str) -> None:
-        state["scenario"] = scenario
-
-    yield begin
+    yield recorder
 
     scenario = state["scenario"]
     if scenario is None or not config_path:
         return
     report = getattr(request.node, "_e2e_call_report", None)
-    entry: dict[str, Any] = {
-        "model": model,
-        "scenario": scenario,
-        "ok": bool(report is not None and report.passed),
-        "seconds": round(time.perf_counter() - started, 2),
-    }
-    if report is not None and report.failed:
-        entry["error"] = _concise_error(report)
+    entry = _build_entry(state, model, time.perf_counter() - started, report)
     path = Path(config_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as fh:
@@ -130,6 +163,17 @@ def e2e_env(
     return root, config, OllamaClient(config.llm)
 
 
+def _events_trace(events: list[tuple[str, str]]) -> str:
+    """Traccia act/observation del turno da allegare a un assert fallito (1.7b)."""
+    rows = []
+    for kind, payload in events:
+        if kind not in {"act", "observation"}:
+            continue
+        text = payload if len(payload) <= 400 else payload[:400] + "... [troncato]"
+        rows.append(f"  [{kind}] {text}")
+    return "eventi del turno:\n" + ("\n".join(rows) if rows else "  (nessuno)")
+
+
 def _run_turn(
     user_input: str,
     env: tuple[Path, AgentConfig, Any],
@@ -148,7 +192,9 @@ def _run_turn(
         confirm=confirm,
         on_event=lambda kind, payload: events.append((kind, payload)),
     )
-    assert not final.startswith("Limite di iterazioni"), f"loop non terminato: {final}"
+    assert not final.startswith("Limite di iterazioni"), (
+        f"loop non terminato: {final}\n{_events_trace(events)}"
+    )
     return final, events, root
 
 
