@@ -290,6 +290,7 @@ def _print_config(console: Console, config: AgentConfig) -> None:
         Panel(
             f"provider: {config.llm.provider}\n"
             f"modello:  {config.llm.model}\n"
+            f"num_ctx:  {config.llm.num_ctx} token\n"
             f"root:     {roots}\n"
             f"max iterazioni: {config.max_iterations}\n"
             f"conferma scrittura: {config.security.require_write_confirmation}\n"
@@ -409,6 +410,8 @@ def main(argv: list[str] | None = None) -> int:
     console.print(
         Panel(
             f"provider: {config.llm.provider} / {config.llm.model}\n"
+            # 1.7b: il valore che verrà davvero mandato a Ollama (opzione num_ctx)
+            f"contesto: {config.llm.num_ctx} token (num_ctx)\n"
             f"root: {', '.join(str(r) for r in config.workspace_roots)}\n"
             "digita /help per i comandi",
             title="AI Agent Locale v0.1",

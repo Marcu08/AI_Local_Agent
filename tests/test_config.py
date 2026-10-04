@@ -54,6 +54,27 @@ def test_num_predict_configurabile(tmp_path: Path) -> None:
         load_config(cfg2)
 
 
+def test_num_ctx_configurabile(tmp_path: Path) -> None:
+    """llm.num_ctx: default 8192, override dal config e validazione (>= 1)."""
+    default = load_config(
+        _write_cfg(tmp_path / "config.json", {"workspace_roots": [str(tmp_path)]})
+    )
+    assert default.llm.num_ctx == 8192
+
+    cfg = _write_cfg(
+        tmp_path / "config.json",
+        {"workspace_roots": [str(tmp_path)], "llm": {"num_ctx": 4096}},
+    )
+    assert load_config(cfg).llm.num_ctx == 4096
+
+    cfg2 = _write_cfg(
+        tmp_path / "config.json",
+        {"workspace_roots": [str(tmp_path)], "llm": {"num_ctx": 0}},
+    )
+    with pytest.raises(ConfigError, match="num_ctx"):
+        load_config(cfg2)
+
+
 def test_history_limiti_configurabili(tmp_path: Path) -> None:
     """agent.history_max_messages / history_max_chars: default e validazione."""
     cfg = _write_cfg(

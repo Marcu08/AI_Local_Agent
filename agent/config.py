@@ -55,6 +55,11 @@ class LLMConfig:
     # massimo numero di token generati per chiamata: protegge da runaway
     # generazionale (possibile con modelli piccoli) che causerebbe timeout
     num_predict: int = 1024
+    # 1.7b: finestra di contesto (token) INVIA a Ollama come `options.num_ctx`.
+    # Senza questa opzione Ollama applica il default del modello (spesso 2048),
+    # che con system prompt + cronologia + osservazioni dei tool basta a malapena:
+    # 8192 copre diversi turni con tool output senza troncare la conversazione.
+    num_ctx: int = 8192
 
 
 @dataclass(frozen=True)
@@ -166,6 +171,7 @@ def load_config(
         base_url=str(llm_raw.get("base_url", "http://localhost:11434")),
         timeout_s=_as_float(llm_raw.get("timeout_s"), 120.0, "llm.timeout_s"),
         num_predict=_as_int(llm_raw.get("num_predict"), 1024, "llm.num_predict"),
+        num_ctx=_as_int(llm_raw.get("num_ctx"), 8192, "llm.num_ctx"),
     )
 
     sec_raw = raw.get("security", {})

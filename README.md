@@ -158,6 +158,7 @@ All'avvio la CLI forza UTF-8 su `stdout`, `stderr` e `stdin` con
 | top | `conversations_dir` | cartella di `/save` `/load` (default `~/.agent/conversations`, deve stare fuori dalle workspace) |
 | `llm` | `provider`, `model`, `base_url` | provider: `ollama` \| `mock` |
 | `llm` | `num_predict` | max token generati per chiamata (default 1024, anti-runaway) |
+| `llm` | `num_ctx` | finestra di contesto (token) inviata a Ollama come `options.num_ctx` (default 8192; mostrata all'avvio del REPL) |
 | `security` | `require_write_confirmation` | conferma y/N per gli scritture (default true) |
 | `security` | `require_command_confirmation` | conferma y/N per i comandi (default true) |
 | `security` | `command_blacklist` | stringhe/voci extra da bloccare |

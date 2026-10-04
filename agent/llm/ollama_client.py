@@ -35,7 +35,13 @@ class OllamaClient:
             "model": self._cfg.model,
             "messages": messages,
             "stream": on_delta is not None,
-            "options": {"num_predict": self._cfg.num_predict},
+            # 1.7b: num_ctx = finestra di contesto effettiva inviata al server:
+            # senza di essa Ollama usa il default del modello (spesso 2048) e la
+            # cronologia con le osservazioni dei tool viene tagliata a sua insaputa
+            "options": {
+                "num_predict": self._cfg.num_predict,
+                "num_ctx": self._cfg.num_ctx,
+            },
         }
         if tools:
             kwargs["tools"] = list(tools)

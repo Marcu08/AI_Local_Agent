@@ -121,3 +121,36 @@ def test_smoke_cli_avviso_root_home(tmp_path: Path) -> None:
     assert proc.returncode == 0, f"stdout={proc.stdout}\nstderr={proc.stderr}"
     assert "Avviso" in proc.stdout, "l'avviso root sensibili deve essere mostrato"
     assert "home" in proc.stdout
+
+
+def test_smoke_cli_stampa_num_ctx_all_avvio(tmp_path: Path) -> None:
+    """1.7b: all'avvio il REPL mostra il num_ctx EFFETTIVO (quello della config).
+
+    Non il default del codice: il valore passato in config.json è quello che il
+    client Ollama invierà come options.num_ctx.
+    """
+    root = tmp_path / "workspace"
+    root.mkdir()
+    cfg = tmp_path / "config.json"
+    cfg.write_text(
+        json.dumps(
+            {
+                "workspace_roots": [str(root)],
+                "llm": {"provider": "mock", "num_ctx": 3072},
+            }
+        ),
+        encoding="utf-8",
+    )
+    proc = subprocess.run(
+        [sys.executable, "-m", "agent", "--config", str(cfg)],
+        input="",
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=120,
+        cwd=str(_PROJECT_ROOT),
+    )
+    assert proc.returncode == 0, f"stdout={proc.stdout}\nstderr={proc.stderr}"
+    assert "num_ctx" in proc.stdout, f"num_ctx non stampato all'avvio: {proc.stdout}"
+    assert "3072" in proc.stdout, f"valore effettivo non stampato: {proc.stdout}"
