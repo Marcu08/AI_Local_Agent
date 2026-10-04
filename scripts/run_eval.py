@@ -10,6 +10,10 @@ Uso:
 
 Ogni run di pytest scrive i suoi recordi su un JSONL temporaneo (opzione
 --e2e-json); alla fine i recordi vengono aggregati per modello x scenario.
+
+Codici d'uscita: 0 = recordi presenti, 1 = nessun record (server assente),
+2 = nessun modello, 3 = pytest non eseguibile con l'interprete corrente
+(usare quello della venv).
 """
 
 from __future__ import annotations
@@ -39,9 +43,16 @@ SCENARIOS: tuple[str, ...] = (
 
 DEFAULT_MODELS = "llama3.1:8b,qwen2.5:7b"
 
+# exit code di pytest: 0 ok, 1 test falliti, 5 nessun test raccolto
+_PYTEST_OK_CODES = frozenset({0, 1, 5})
+# keyword che compaiono nella riga di riepilogo ("8 passed in 1.2s", ...)
+_SUMMARY_KEYWORDS = ("passed", "skipped", "failed", "error")
+# righe stampate quando il riepilogo manca (diagnostici a console)
+_TAIL_LINES = 15
 
-def run_pytest(model: str, jsonl: Path, base_url: str, timeout_s: int) -> str:
-    """Un giro di pytest per un modello; ritorna l'output (per i diagnostici)."""
+
+def run_pytest(model: str, jsonl: Path, base_url: str, timeout_s: int) -> tuple[int | None, str]:
+    """Un giro di pytest; ritorna (returncode | None se timeout, output)."""
     env = dict(os.environ)
     env["AGENT_E2E_BASE_URL"] = base_url
     cmd = [
@@ -59,9 +70,30 @@ def run_pytest(model: str, jsonl: Path, base_url: str, timeout_s: int) -> str:
             text=True,
             timeout=timeout_s,
         )
-    except subprocess.TimeoutExpired:
-        return f"TIMEOUT dopo {timeout_s}s"
-    return proc.stdout + proc.stderr
+    except subprocess.TimeoutExpired as e:
+        partial = e.stdout or ""
+        if isinstance(partial, bytes):  # text=True dovrebbe dare str, ma non si sa mai
+            partial = partial.decode("utf-8", errors="replace")
+        return None, f"{partial}\nTIMEOUT dopo {timeout_s}s"
+    return proc.returncode, proc.stdout + proc.stderr
+
+
+def _summary_line(output: str) -> str | None:
+    """Ultima riga non vuota che sembra un riepilogo di pytest; None se assente."""
+    tail = [ln for ln in output.splitlines() if ln.strip()]
+    return next(
+        (ln for ln in reversed(tail) if any(w in ln for w in _SUMMARY_KEYWORDS)),
+        None,
+    )
+
+
+def _print_output_tail(output: str, returncode: int | None) -> None:
+    """Diagnostics quando il riepilogo manca: ultime 15 righe + returncode."""
+    print(f"   riepilogo assente — ultime {_TAIL_LINES} righe dell'output:")
+    for line in output.splitlines()[-_TAIL_LINES:]:
+        print(f"   | {line}")
+    rc_text = str(returncode) if returncode is not None else "(timeout: nessuno)"
+    print(f"   | returncode: {rc_text}")
 
 
 def load_records(jsonl: Path) -> list[dict]:
@@ -160,13 +192,8 @@ def render_markdown(
         lines.append("")
 
     lines += ["## Note", ""]
-    keywords = ("passed", "skipped", "failed", "error")
     for model, output in outputs.items():
-        tail = [ln for ln in output.splitlines() if ln.strip()]
-        summary = next(
-            (ln for ln in reversed(tail) if any(w in ln for w in keywords)),
-            "(nessun riepilogo)",
-        )
+        summary = _summary_line(output) or "(nessun riepilogo)"
         lines.append(f"- `{model}`: {summary.strip()}")
     lines += [
         "",
