@@ -10,6 +10,9 @@ Uso:
 
 Ogni run di pytest scrive i suoi recordi su un JSONL temporaneo (opzione
 --e2e-json); alla fine i recordi vengono aggregati per modello x scenario.
+Prima di ogni modello parte un warm-up (POST /api/generate con keep_alive
+lungo): il caricamento a freddo (decine di secondi) lo paga il warm-up, non
+il primo scenario.
 L'output di pytest viene mostrato in TEMPO REALE (una riga per volta, con
 prefisso "> ") così si vede l'avanzamento; Ctrl+C termina il subprocess,
 raccoglie i record già scritti, scrive il report parziale ed esce con 130
@@ -33,6 +36,7 @@ import sys
 import tempfile
 import threading
 import time
+import urllib.request
 from collections.abc import Iterator
 from datetime import datetime
 from pathlib import Path
@@ -67,6 +71,10 @@ _READER_JOIN_S = 5.0
 _LIVE_PREFIX = "   > "
 # exit code su Ctrl+C (128 + SIGINT), convenzione POSIX
 EXIT_INTERRUPTED = 130
+# 1.7c: warm-up per modello — keep_alive lungo perché il modello resti in
+# memoria per tutta la valutazione; 300s reggono anche un caricamento lento
+_WARMUP_KEEP_ALIVE = "1h"
+_WARMUP_TIMEOUT_S = 300.0
 
 
 def _break_as_interrupt(signum: int, frame: Any) -> None:
@@ -154,6 +162,56 @@ def _pump(stream: Any, lines: list[str]) -> None:
         close = getattr(stream, "close", None)
         if callable(close):
             close()
+
+
+def warm_up(
+    base_url: str, model: str, timeout_s: float = _WARMUP_TIMEOUT_S
+) -> float | None:
+    """Carica il modello in memoria con una chiamata minima (1.7c).
+
+    POST /api/generate con un solo token e keep_alive lungo: il caricamento a
+    freddo (decine di secondi) lo paga QUI, non il primo scenario. Ritorna i
+    secondi impiegati, oppure None se la chiamata fallisce (server via,
+    modello assente): il warm-up non è mai fatale, la valutazione prosegue.
+    Stessa funzione usata dal fixture e2e (_warmed_models), così anche un
+    `pytest -m e2e` eseguito senza run_eval parte già caldo.
+    """
+    payload = json.dumps(
+        {
+            "model": model,
+            "prompt": "",
+            "keep_alive": _WARMUP_KEEP_ALIVE,
+            "stream": False,
+            "options": {"num_predict": 1},
+        }
+    ).encode("utf-8")
+    request = urllib.request.Request(
+        f"{base_url.rstrip('/')}/api/generate",
+        data=payload,
+        headers={"Content-Type": "application/json"},
+    )
+    started = time.monotonic()
+    try:
+        with urllib.request.urlopen(request, timeout=timeout_s) as response:
+            response.read()
+    except Exception:
+        # qualsiasi problema di rete/404: non bloccare la valutazione per questo
+        return None
+    return time.monotonic() - started
+
+
+def _print_warm_up(base_url: str, model: str) -> None:
+    """Warm-up visibile prima del primo run del modello (1.7c).
+
+    Il flush è essenziale: senza, la riga "warm-up..." resterebbe nel buffer
+    proprio mentre il modello ci mette mezzo minuto a caricare.
+    """
+    print(f"   warm-up {model} (keep_alive={_WARMUP_KEEP_ALIVE})...", flush=True)
+    seconds = warm_up(base_url, model)
+    if seconds is None:
+        print("   warm-up non riuscito: il primo scenario pagherà il caricamento a freddo")
+    else:
+        print(f"   warm-up ok ({seconds:.1f}s)")
 
 
 def run_pytest(model: str, jsonl: Path, base_url: str, timeout_s: int) -> tuple[int | None, str]:
@@ -385,6 +443,7 @@ def main(argv: list[str] | None = None) -> int:
                 jsonl = Path(tmp) / (model.replace(":", "_").replace("/", "_") + ".jsonl")
                 jsonls[model] = jsonl
                 print(f"== {model}: {args.runs} run ==")
+                _print_warm_up(args.base_url, model)
                 last_output = ""
                 for i in range(args.runs):
                     returncode, last_output = run_pytest(model, jsonl, args.base_url, args.timeout)

@@ -21,6 +21,7 @@ from agent.config import AgentConfig, LLMConfig
 from agent.loop import SYSTEM_PROMPT, run_turn
 from agent.security.confirm import ScriptedConfirm
 from agent.tools import create_default_registry
+from scripts.run_eval import warm_up
 
 
 # modello scelto da --e2e-models / AGENT_E2E_MODELS; default = quello di config
@@ -48,6 +49,18 @@ def ollama_base() -> str:
             "già scaricati e rilancia (nessun download viene fatto qui)"
         )
     return base
+
+
+@pytest.fixture(scope="session")
+def _warmed_models(ollama_base: str, request: pytest.FixtureRequest) -> None:
+    """1.7c: carica ogni modello richiesto PRIMA del primo scenario.
+
+    Stesso warm-up di run_eval (chiamata minima con keep_alive lungo, non
+    fatale): anche un `pytest -m e2e` eseguito senza run_eval non fa pagare
+    al primo scenario il caricamento a freddo del modello.
+    """
+    for model in _requested_models(request.config):
+        warm_up(ollama_base, model)
 
 
 @pytest.hookimpl(hookwrapper=True)
@@ -148,7 +161,7 @@ def e2e_record(
 
 @pytest.fixture
 def e2e_env(
-    model: str, ollama_base: str, tmp_path: Path
+    model: str, ollama_base: str, tmp_path: Path, _warmed_models: None
 ) -> tuple[Path, AgentConfig, Any]:
     """Workspace sintetico + config con modello reale + client Ollama (lazy import)."""
     from agent.llm.ollama_client import OllamaClient  # import pigro: niente ollama alla collection

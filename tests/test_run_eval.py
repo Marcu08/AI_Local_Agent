@@ -10,7 +10,9 @@ Aree (1.7b):
 - encoding: il testo non codificabile del figlio non deve far cadere la
   stampa su una console cp1252 (regressione trovata a mano con run reale);
 - Ctrl+Break (Windows): solleva lo stesso KeyboardInterrupt e il handler
-  SIGBREAK viene ripristinato a fine run.
+  SIGBREAK viene ripristinato a fine run;
+- warm-up (1.7c): prima di ogni modello run_eval carica il modello con una
+  chiamata minima (keep_alive lungo, mai fatale), sempre PRIMA del primo run.
 """
 
 from __future__ import annotations
@@ -190,6 +192,101 @@ def test_interrupt_pulito_installa_e_ripristina_il_handler() -> None:
         assert signal.getsignal(signal.SIGBREAK) is run_eval._break_as_interrupt
 
     assert signal.getsignal(signal.SIGBREAK) is precedente
+
+
+# --- 1.7c: warm-up per modello ------------------------------------------------
+
+
+class _FakeResponse:
+    """Response finta di urlopen per il warm-up (context manager + read)."""
+
+    def __enter__(self) -> _FakeResponse:
+        return self
+
+    def __exit__(self, *args: Any) -> bool:
+        return False
+
+    def read(self) -> bytes:
+        return b'{"done": true}'
+
+
+def test_warm_up_manda_generate_con_keep_alive_lungo(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """POST /api/generate: un solo token, keep_alive lungo, timeout dedicato."""
+    captured: dict[str, Any] = {}
+
+    def fake_urlopen(request: Any, timeout: float | None = None) -> _FakeResponse:
+        captured["url"] = request.full_url
+        captured["body"] = json.loads(request.data.decode("utf-8"))
+        captured["timeout"] = timeout
+        return _FakeResponse()
+
+    monkeypatch.setattr(run_eval.urllib.request, "urlopen", fake_urlopen)
+
+    seconds = run_eval.warm_up("http://localhost:11434/", "llama3.1:8b")
+
+    assert seconds is not None and seconds >= 0.0
+    assert captured["url"] == "http://localhost:11434/api/generate"
+    assert captured["body"]["model"] == "llama3.1:8b"
+    assert captured["body"]["keep_alive"] == run_eval._WARMUP_KEEP_ALIVE
+    assert captured["body"]["stream"] is False
+    assert captured["body"]["options"] == {"num_predict": 1}
+    assert captured["timeout"] == run_eval._WARMUP_TIMEOUT_S
+
+
+def test_warm_up_non_fatale(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Server via o modello assente: warm_up ritorna None, non alza."""
+
+    def boom(request: Any, timeout: float | None = None) -> _FakeResponse:
+        raise OSError("server non raggiungibile")
+
+    monkeypatch.setattr(run_eval.urllib.request, "urlopen", boom)
+
+    assert run_eval.warm_up("http://localhost:11434", "fake:model") is None
+
+
+def test_main_fa_il_warm_up_prima_di_ogni_modello(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    """Ordine garantito: warm-up(model) PRIMA del primo run di quel modello."""
+
+    events: list[str] = []
+
+    def fake_warm(base_url: str, model: str, timeout_s: float = 0.0) -> float:
+        events.append(f"warm:{model}")
+        return 1.5
+
+    def fake_popen(*args: Any, **kwargs: Any) -> _FakePopen:
+        cmd = list(args[0])
+        model = cmd[cmd.index("--e2e-models") + 1]
+        jsonl = Path(cmd[cmd.index("--e2e-json") + 1])
+        record = {"model": model, "scenario": "elenco_cartella",
+                  "ok": True, "seconds": 0.5, "error": ""}
+        jsonl.write_text(json.dumps(record) + "\n", encoding="utf-8")
+        events.append(f"pytest:{model}")
+        return _FakePopen(0, "8 passed in 0.10s\n")
+
+    monkeypatch.setattr(run_eval, "warm_up", fake_warm)
+    monkeypatch.setattr(run_eval.subprocess, "Popen", fake_popen)
+    out = tmp_path / "EVAL.md"
+
+    code = run_eval.main(
+        ["--models", "fake:uno,fake:due", "--runs", "1", "--out", str(out)]
+    )
+
+    assert code == 0
+    assert events == [
+        "warm:fake:uno",
+        "pytest:fake:uno",
+        "warm:fake:due",
+        "pytest:fake:due",
+    ]
+    captured = capsys.readouterr()
+    assert "warm-up fake:uno (keep_alive=1h)..." in captured.out
+    assert "warm-up ok (1.5s)" in captured.out
 
 
 def test_output_del_figlio_in_tempo_reale(
