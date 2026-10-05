@@ -170,10 +170,20 @@ def e2e_env(
     root.mkdir()
     config = AgentConfig(
         workspace_roots=(root,),
-        llm=LLMConfig(model=model, base_url=ollama_base),
+        llm=_llm_config(model, ollama_base),
         conversations_dir=tmp_path / "conversations",
     )
     return root, config, OllamaClient(config.llm)
+
+
+def _llm_config(model: str, base_url: str) -> LLMConfig:
+    """Config LLM degli e2e (1.7c): timeout della chiamata più alto del default.
+
+    Un caricamento lento o una generazione lunga su CPU non devono diventare
+    un fallimento del modello: 300s reggono anche il caso peggiore (il default
+    di config.json resta 120s per l'uso interattivo).
+    """
+    return LLMConfig(model=model, base_url=base_url, timeout_seconds=300.0)
 
 
 def _events_trace(events: list[tuple[str, str]]) -> str:

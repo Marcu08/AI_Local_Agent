@@ -75,6 +75,27 @@ def test_num_ctx_configurabile(tmp_path: Path) -> None:
         load_config(cfg2)
 
 
+def test_timeout_seconds_configurabile(tmp_path: Path) -> None:
+    """llm.timeout_seconds: default 120, override dal config e validazione (> 0)."""
+    default = load_config(
+        _write_cfg(tmp_path / "config.json", {"workspace_roots": [str(tmp_path)]})
+    )
+    assert default.llm.timeout_seconds == 120.0
+
+    cfg = _write_cfg(
+        tmp_path / "config.json",
+        {"workspace_roots": [str(tmp_path)], "llm": {"timeout_seconds": 300}},
+    )
+    assert load_config(cfg).llm.timeout_seconds == 300.0
+
+    cfg2 = _write_cfg(
+        tmp_path / "config.json",
+        {"workspace_roots": [str(tmp_path)], "llm": {"timeout_seconds": 0}},
+    )
+    with pytest.raises(ConfigError, match="llm.timeout_seconds"):
+        load_config(cfg2)
+
+
 def test_history_limiti_configurabili(tmp_path: Path) -> None:
     """agent.history_max_messages / history_max_chars: default e validazione."""
     cfg = _write_cfg(

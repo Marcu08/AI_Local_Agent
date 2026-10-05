@@ -159,3 +159,31 @@ def test_chat_num_ctx_default_8192(monkeypatch: pytest.MonkeyPatch) -> None:
     options = fake.instances[0].kwargs
     assert options is not None
     assert options["options"]["num_ctx"] == 8192
+
+
+# --- 1.7c: timeout della chiamata (llm.timeout_seconds) -----------------------
+
+
+def test_client_riceve_il_timeout_della_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    """llm.timeout_seconds arriva al client ufficiale (300s negli e2e)."""
+    fake = _fake_ollama(monkeypatch)
+    client = OllamaClient(
+        LLMConfig(
+            model="fake:model",
+            base_url="http://fake:11434",
+            timeout_seconds=300.0,
+        )
+    )
+
+    client.chat([{"role": "user", "content": "ciao"}])
+
+    assert fake.instances[0].timeout == 300.0
+
+
+def test_client_timeout_default_120(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Senza override il client usa il default della config (120s)."""
+    fake = _fake_ollama(monkeypatch)
+
+    OllamaClient(LLMConfig()).chat([{"role": "user", "content": "ciao"}])
+
+    assert fake.instances[0].timeout == 120.0

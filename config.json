@@ -4,7 +4,7 @@
     "provider": "ollama",
     "model": "llama3.1:8b",
     "base_url": "http://localhost:11434",
-    "timeout_s": 120,
+    "timeout_seconds": 120,
     "num_predict": 1024,
     "num_ctx": 8192
   },

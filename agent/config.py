@@ -51,7 +51,8 @@ class LLMConfig:
     provider: str = "ollama"
     model: str = "llama3.1:8b"
     base_url: str = "http://localhost:11434"
-    timeout_s: float = 120.0
+    # timeout della singola chiamata Ollama in secondi (chiave llm.timeout_seconds)
+    timeout_seconds: float = 120.0
     # massimo numero di token generati per chiamata: protegge da runaway
     # generazionale (possibile con modelli piccoli) che causerebbe timeout
     num_predict: int = 1024
@@ -169,7 +170,9 @@ def load_config(
         provider=str(llm_raw.get("provider", "ollama")),
         model=str(llm_raw.get("model", "llama3.1:8b")),
         base_url=str(llm_raw.get("base_url", "http://localhost:11434")),
-        timeout_s=_as_float(llm_raw.get("timeout_s"), 120.0, "llm.timeout_s"),
+        timeout_seconds=_as_float(
+            llm_raw.get("timeout_seconds"), 120.0, "llm.timeout_seconds"
+        ),
         num_predict=_as_int(llm_raw.get("num_predict"), 1024, "llm.num_predict"),
         num_ctx=_as_int(llm_raw.get("num_ctx"), 8192, "llm.num_ctx"),
     )

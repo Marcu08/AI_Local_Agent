@@ -14,7 +14,7 @@ import json
 from types import SimpleNamespace
 from typing import Any
 
-from tests.e2e.conftest import ScenarioRecorder, _build_entry, _events_trace
+from tests.e2e.conftest import ScenarioRecorder, _build_entry, _events_trace, _llm_config
 from tests.e2e.test_e2e import _diag
 
 _EVENTS: list[tuple[str, str]] = [
@@ -98,3 +98,12 @@ def test_entry_senza_note_non_aggiunge_campi() -> None:
     state: dict[str, Any] = {"scenario": "elenco_cartella"}
     entry = _build_entry(state, "fake:model", 0.5, None)
     assert set(entry) == {"model", "scenario", "ok", "seconds"}
+
+
+def test_config_e2e_alza_il_timeout_della_chiamata() -> None:
+    """1.7c: negli e2e il timeout Ollama è 300s, non il default 120 del config."""
+    cfg = _llm_config("llama3.1:8b", "http://localhost:11434")
+
+    assert cfg.timeout_seconds == 300.0
+    assert cfg.model == "llama3.1:8b"
+    assert cfg.base_url == "http://localhost:11434"

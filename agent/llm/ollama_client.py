@@ -23,7 +23,8 @@ class OllamaClient:
         except ImportError as e:  # pragma: no cover - dipendenza dichiarata in pyproject
             raise LLMError("pacchetto 'ollama' non installato: pip install ollama") from e
         self._cfg = cfg
-        self._client = ollama.Client(host=cfg.base_url, timeout=cfg.timeout_s)
+        # 1.7c: timeout della chiamata passato dalla config (llm.timeout_seconds)
+        self._client = ollama.Client(host=cfg.base_url, timeout=cfg.timeout_seconds)
 
     def chat(
         self,
