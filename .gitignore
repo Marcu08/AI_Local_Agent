@@ -12,3 +12,4 @@ dist/
 data/
 logs/
 vector_index/
+*jsonl
