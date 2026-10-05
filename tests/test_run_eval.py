@@ -12,7 +12,9 @@ Aree (1.7b):
 - Ctrl+Break (Windows): solleva lo stesso KeyboardInterrupt e il handler
   SIGBREAK viene ripristinato a fine run;
 - warm-up (1.7c): prima di ogni modello run_eval carica il modello con una
-  chiamata minima (keep_alive lungo, mai fatale), sempre PRIMA del primo run.
+  chiamata minima (keep_alive lungo, mai fatale), sempre PRIMA del primo run;
+- infra (1.7c): un fallimento per timeout è marcato `infra` nel report (fuori
+  dagli "Errori tipici") e la sezione Note ne riporta il conteggio.
 """
 
 from __future__ import annotations
@@ -287,6 +289,98 @@ def test_main_fa_il_warm_up_prima_di_ogni_modello(
     captured = capsys.readouterr()
     assert "warm-up fake:uno (keep_alive=1h)..." in captured.out
     assert "warm-up ok (1.5s)" in captured.out
+
+
+# --- 1.7c: timeout classificati come infra nel report -------------------------
+
+
+def _record(
+    scenario: str, *, ok: bool = True, error: str = "", seconds: float = 2.0
+) -> dict[str, Any]:
+    entry: dict[str, Any] = {
+        "model": "fake:model",
+        "scenario": scenario,
+        "ok": ok,
+        "seconds": seconds,
+    }
+    if error:
+        entry["error"] = error
+    return entry
+
+
+_TIMEOUT_ERROR = "E agent.llm.base.LLMError: chiamata Ollama fallita: Read timed out"
+_MODEL_ERROR = "E assert 'ARANCE77' in response"
+
+
+def test_is_infra_solo_fallimenti_per_timeout() -> None:
+    """Timeout → infra; assert/runtime falliti → modello; ok → mai infra."""
+    assert run_eval._is_infra(_record("s", ok=False, error=_TIMEOUT_ERROR)) is True
+    assert run_eval._is_infra(_record("s", ok=False, error="E httpx.ReadTimeout")) is True
+    assert run_eval._is_infra(_record("s", ok=False, error=_MODEL_ERROR)) is False
+    assert run_eval._is_infra(_record("s", ok=False, error="E RuntimeError: boh")) is False
+    # un record riuscito non è mai infra, anche se il testo contiene "timeout"
+    assert run_eval._is_infra(_record("s", ok=True, error="timeout gestito")) is False
+
+
+def test_report_classifica_il_timeout_come_infra() -> None:
+    """Il timeout esce come marcatore `infra`, fuori dagli Errori tipici, e la
+    riga Note riporta quanti scenari sono stati contati come infra."""
+    records = [
+        _record("elenco_cartella", ok=False, error=_TIMEOUT_ERROR, seconds=2.5),
+        _record("lettura_file", ok=False, error=_MODEL_ERROR, seconds=3.0),
+        _record("task_multipasso", ok=True, seconds=4.0),
+    ]
+
+    report = run_eval.render_markdown(
+        records,
+        ["fake:model"],
+        1,
+        "http://localhost:11434",
+        {"fake:model": "8 failed in 25.0s"},
+    )
+
+    # timeout: nessun rapporto successi/fallimenti a carico del modello
+    assert "| elenco_cartella | 1 infra (2.5s) |" in report
+    # il fallimento vero resta un fallimento del modello
+    assert "| lettura_file | 0/1 (3.0s) |" in report
+    assert "| task_multipasso | 1/1 (4.0s) |" in report
+    errori = report.split("## Errori tipici", 1)[1].split("## Note", 1)[0]
+    assert "ARANCE77" in errori
+    assert "timed out" not in errori
+    assert "Scenari contati come infra (timeout): 1" in report
+
+
+def test_report_cella_mista_conta_solo_il_modello() -> None:
+    """1 ok + 1 timeout sullo stesso scenario → 1/1 (solo modello) + 1 infra."""
+    records = [
+        _record("elenco_cartella", ok=True, seconds=3.0),
+        _record("elenco_cartella", ok=False, error=_TIMEOUT_ERROR, seconds=2.0),
+    ]
+
+    report = run_eval.render_markdown(
+        records,
+        ["fake:model"],
+        2,
+        "http://localhost:11434",
+        {"fake:model": "8 passed"},
+    )
+
+    assert "| elenco_cartella | 1/1 (2.5s) · 1 infra |" in report
+
+
+def test_report_nota_infra_presente_anche_a_zero() -> None:
+    """La riga Note con il conteggio c'è sempre (0 quando nessun timeout)."""
+    records = [_record("elenco_cartella", ok=True, seconds=1.0)]
+
+    report = run_eval.render_markdown(
+        records,
+        ["fake:model"],
+        1,
+        "http://localhost:11434",
+        {"fake:model": "8 passed"},
+    )
+
+    assert "Scenari contati come infra (timeout): 0" in report
 
 
 def test_output_del_figlio_in_tempo_reale(

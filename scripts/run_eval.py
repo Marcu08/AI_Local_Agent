@@ -64,6 +64,9 @@ _PYTEST_OK_CODES = frozenset({0, 1, 5})
 _SUMMARY_KEYWORDS = ("passed", "skipped", "failed", "error")
 # righe stampate quando il riepilogo manca (diagnostici a console)
 _TAIL_LINES = 15
+# 1.7c: sottostringhe che identificano un timeout nell'errore di un record:
+# il fallimento è dell'infrastruttura (rete/server/caricamento), non del modello
+_INFRA_MARKERS = ("timeout", "timed out")
 # 1.7b: polling dell'uscita del figlio (timeout / terminazione) e join del
 # thread lettore dopo kill(); prefisso delle righe mostrate in tempo reale
 _POLL_INTERVAL_S = 0.05
@@ -334,6 +337,19 @@ def _first_error_line(error: str) -> str:
     return "(errore senza testo)"
 
 
+def _is_infra(record: dict) -> bool:
+    """True se il record è un FALLIMENTO per timeout (1.7c): infra, non modello.
+
+    Un timeout di rete/server/caricamento non dice nulla sulla qualità del
+    modello: viene marcato `infra` nel report e non entra negli "Errori tipici".
+    I record riusciti non sono mai infra, qualunque testo contengano.
+    """
+    if record.get("ok"):
+        return False
+    error = str(record.get("error", "")).lower()
+    return any(marker in error for marker in _INFRA_MARKERS)
+
+
 def render_markdown(
     records: list[dict],
     models: list[str],
@@ -354,6 +370,7 @@ def render_markdown(
         f"(runs={runs}, base_url={base_url}).",
         "",
         "Ogni cella: **successi/recordi registrati** (tempo medio in secondi).",
+        "Un fallimento per timeout è marcato `infra`: non è un errore del modello.",
         "Uno scenario senza recordi è stato saltato (server non raggiungibile):",
         "riguardare eseguendo di nuovo con Ollama in esecuzione.",
         "",
@@ -370,10 +387,20 @@ def render_markdown(
             if not entries:
                 cells.append("— (skip)")
                 continue
-            oks = sum(1 for e in entries if e.get("ok"))
+            # 1.7c: i timeout non entrano nel rapporto successi/fallimenti:
+            # il modello non è stato provato, è stata la rete a mancare
+            model_entries = [e for e in entries if not _is_infra(e)]
+            infra_n = len(entries) - len(model_entries)
             secs = [float(e.get("seconds", 0.0)) for e in entries]
             avg = sum(secs) / len(secs)
-            cell = f"{oks}/{len(entries)} ({avg:.1f}s)"
+            if model_entries:
+                oks = sum(1 for e in model_entries if e.get("ok"))
+                cell = f"{oks}/{len(model_entries)} ({avg:.1f}s)"
+                if infra_n:
+                    cell += f" · {infra_n} infra"
+            else:
+                # solo timeout: nessun giudizio possibile sul modello
+                cell = f"{infra_n} infra ({avg:.1f}s)"
             if len(entries) < runs:
                 cell += f" · {runs - len(entries)} mancanti"
             cells.append(cell)
@@ -387,7 +414,7 @@ def render_markdown(
             if m != model:
                 continue
             for entry in entries:
-                if not entry.get("ok") and entry.get("error"):
+                if not entry.get("ok") and entry.get("error") and not _is_infra(entry):
                     errors.setdefault(scenario, []).append(
                         _first_error_line(str(entry["error"]))
                     )
@@ -408,6 +435,11 @@ def render_markdown(
     for model, output in outputs.items():
         summary = _summary_line(output) or "(nessun riepilogo)"
         lines.append(f"- `{model}`: {summary.strip()}")
+    infra_count = sum(1 for record in records if _is_infra(record))
+    lines.append(
+        f"- Scenari contati come infra (timeout): {infra_count} "
+        "(non conteggiati come fallimenti del modello)."
+    )
     lines += [
         "",
         "La scelta del modello di default va scritta nel README dopo aver",
