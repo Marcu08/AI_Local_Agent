@@ -1,5 +1,6 @@
 """Registry dei tool dell'agente (Fase 1) + costruttore di default."""
 
+from agent.tools.ask_user import ask_user
 from agent.tools.base import Tool, ToolContext, ToolRegistry, ToolResult, clip
 from agent.tools.fs_read import list_dir, read_file
 from agent.tools.fs_search import search_files
@@ -200,6 +201,29 @@ def create_default_registry() -> ToolRegistry:
                 "required": ["query"],
             },
             handler=search_memory,
+        )
+    )
+    registry.register(
+        Tool(
+            name="ask_user",
+            description=(
+                "Chiede all'utente un chiarimento quando manca un'informazione "
+                "(nome di un file, una scelta, una preferenza): meglio chiedere "
+                "che inventare. Massimo 3 domande per turno. "
+                'Esempio: question="Quale file intendi: note.md o todo.md?"'
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "question": {
+                        "type": "string",
+                        "maxLength": 300,
+                        "description": "Domanda breve e sola (max 300 caratteri)",
+                    }
+                },
+                "required": ["question"],
+            },
+            handler=ask_user,
         )
     )
     return registry

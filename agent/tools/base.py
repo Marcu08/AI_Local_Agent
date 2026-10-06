@@ -156,11 +156,14 @@ class ToolContext:
 
     `seen_untrusted` diventa True dopo la prima osservazione che espone contenuto
     esterno (file/comandi): le conferme successive lo mostrano all'utente.
+    `ask_count` conta le domande `ask_user` già fatte in questo TURNO
+    (anti-loop della 1.8.1: massimo 3, la quarta è un errore).
     """
 
     config: AgentConfig
     confirm: ConfirmationHandler
     seen_untrusted: bool = False
+    ask_count: int = 0
 
 
 Handler = Callable[[dict[str, Any], ToolContext], ToolResult]

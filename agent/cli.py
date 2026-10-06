@@ -17,7 +17,7 @@ from agent.llm.base import LLMClient, LLMError
 from agent.llm.mock_client import MockClient, final_response, tool_call_response
 from agent.loop import SYSTEM_PROMPT, run_turn
 from agent.security.audit import AuditLog
-from agent.security.confirm import RichConfirmation, ScriptedConfirm
+from agent.security.confirm import NonInteractiveConfirm, RichConfirmation
 from agent.security.paths import sensitive_root_warnings
 from agent.tools import ToolRegistry, create_default_registry
 
@@ -356,8 +356,12 @@ def _run(llm: LLMClient, registry: ToolRegistry, config: AgentConfig, console: C
 
 
 def _run_demo(llm: LLMClient, registry: ToolRegistry, config: AgentConfig, console: Console) -> int:
-    """Modalità non-interattiva (stdin piped): un turno completo e uscita."""
-    confirm = ScriptedConfirm(default=True)
+    """Modalità non-interattiva (stdin piped): un turno completo e uscita.
+
+    1.8.1: la conferma è `NonInteractiveConfirm` (approva, come prima) e anche
+    `ask` è non-interattivo: un ask_user in demo non blocca mai il processo.
+    """
+    confirm = NonInteractiveConfirm(default=True)
     on_event = make_on_event(console)
     try:
         run_turn(

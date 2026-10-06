@@ -53,13 +53,14 @@ agent/
 │   ├── fs_read.py    # list_dir, read_file
 │   ├── fs_write.py   # write_file (diff + conferma y/N)
 │   ├── shell.py      # run_command (blacklist + conferma + timeout)
+│   ├── ask_user.py   # ask_user (1.8.1): chiarimenti, max 3 per turno
 │   └── memory_tool.py# search_memory (scaffold Fase 2)
 ├── security/
 │   ├── paths.py      # safe_resolve(): whitelist, anti path-traversal
 │   ├── blacklist.py  # regex comandi distruttivi (+ voci da config)
 │   ├── allowlist.py  # autoapprove_reason(): comandi read-only senza conferma
 │   ├── audit.py      # AuditLog JSONL: una riga per tool call
-│   └── confirm.py    # ConfirmationHandler iniettabile (test senza input())
+│   └── confirm.py    # ConfirmationHandler (confirm + ask) iniettabile (test senza input())
 └── memory/           # SCAFFOLD Fase 2: ingest, store (ChromaDB lazy), retrieval
 ```
 
@@ -67,6 +68,19 @@ agent/
 dispatcher le esegue (applicando sicurezza e conferme) → le *osservazioni*
 rientrano nei messaggi → si ripete fino alla risposta finale o al limite di
 `agent.max_iterations`.
+
+## Tool
+
+| Tool | Cosa fa | Conferma |
+|---|---|---|
+| `list_dir` | elenca una cartella dentro le `workspace_root` | no (sola lettura) |
+| `read_file` | legge un file di testo dentro le `workspace_root` | solo per file sensibili |
+| `search_files` | ricerca testuale dentro le `workspace_root` | no (sola lettura) |
+| `search_memory` | ricerca nella memoria RAG (scaffold Fase 2) | no (sola lettura) |
+| `write_file` | crea o sovrascrive un file (mostra il diff) | **sempre** `y/N` |
+| `edit_file` | sostituzione univoca `old_str` → `new_str` (mostra il diff) | **sempre** `y/N` |
+| `run_command` | esegue un comando nella prima root (blacklist + timeout) | allowlist → auto, altrimenti `y/N` |
+| `ask_user` | chiede all'utente un chiarimento invece di inventare (1.8.1) | no — max 3 domande per turno |
 
 ## Regole di sicurezza
 
@@ -131,6 +145,14 @@ La sicurezza è **difensiva in profondità**, non un sandbox:
   arbitrari: la responsabilità dell'approvazione è di chi digita `y`.
 - **`cwd` forzato alla prima root non è un jail**: con `shell=True` un comando
   approvato può raggiungere il filesystem con i permessi dell'utente.
+- **`ask_user` non è una linea diretta con l'utente.** Max **3 domande per
+  turno** (alla quarta il tool risponde con un errore che invita a proseguire
+  con le informazioni disponibili) e domande di max 300 caratteri. In modalità
+  **non interattiva** (demo, stdin pipato) non blocca mai: la risposta è
+  `[nessuna risposta disponibile: modalità non interattiva]`, mentre Ctrl+C
+  durante l'attesa produce `[risposta annullata: attesa interrotta]`. La
+  risposta dell'utente è input fidato ed **esce** dal delimitatore
+  `untrusted` (nel audit viene registrata la domanda, non la risposta).
 
 ## Codifica (Windows, pipe e non-TTY)
 
@@ -180,12 +202,12 @@ All'avvio la CLI forza UTF-8 su `stdout`, `stderr` e `stdin` con
 I test usano fixture sintetiche su `tmp_path` e mock iniettabili: mai `input()`
 reale, mai server vivi (convenzione dei progetti JARVIS/BAULI).
 
-Gli **scenari e2e** (`tests/e2e/`, Fase 1.7) sono l'unica eccezione: usano un
+Gli **scenari e2e** (`tests/e2e/`, Fase 1.7 + 1.8) sono l'unica eccezione: usano un
 modello reale, sono marcati `e2e` ed **esclusi di default**. Si eseguono solo
 con Ollama già in esecuzione (nessun modello viene scaricato da qui):
 
 ```bash
-# 8 scenari x 3 con un modello scelto via CLI o env AGENT_E2E_MODELS
+# 9 scenari x 3 con un modello scelto via CLI o env AGENT_E2E_MODELS
 .venv\Scripts\python -m pytest -m e2e --e2e-models llama3.1:8b
 
 # 3 giri per modello → docs/EVAL.md (tabella modello x scenario x successi/3)

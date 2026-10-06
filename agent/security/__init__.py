@@ -7,13 +7,23 @@ from agent.security.blacklist import (
     find_path_based_block,
     is_destructive,
 )
-from agent.security.confirm import ConfirmationHandler, RichConfirmation, ScriptedConfirm
+from agent.security.confirm import (
+    ASK_INTERRUPTED,
+    ASK_UNAVAILABLE,
+    ConfirmationHandler,
+    NonInteractiveConfirm,
+    RichConfirmation,
+    ScriptedConfirm,
+)
 from agent.security.paths import PathNotAllowedError, is_allowed, safe_resolve
 
 __all__ = [
+    "ASK_INTERRUPTED",
+    "ASK_UNAVAILABLE",
     "AllowlistEntry",
     "AuditLog",
     "ConfirmationHandler",
+    "NonInteractiveConfirm",
     "PathNotAllowedError",
     "RichConfirmation",
     "ScriptedConfirm",

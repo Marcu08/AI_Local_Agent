@@ -259,8 +259,9 @@ def test_eccezione_path_whitelist_diventa_errore(registry, config, allow_confirm
 
 def test_to_schemas_formato_ollama(registry) -> None:
     schemas = registry.to_schemas()
-    # list_dir, read_file, write_file, edit_file, search_files, run_command, search_memory
-    assert len(schemas) == 7
+    # list_dir, read_file, write_file, edit_file, search_files, run_command,
+    # search_memory, ask_user (1.8.1)
+    assert len(schemas) == 8
     for schema in schemas:
         assert schema["type"] == "function"
         fn = schema["function"]
